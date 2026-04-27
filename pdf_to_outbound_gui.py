@@ -304,8 +304,12 @@ class ConversionWorker(QThread):
     def run(self):
         try:
             self.log.emit(f"  📋 模板: {TEMPLATE_NAMES.get(self.template_key, '')}")
-            self.log.emit(f"  正在读取PDF: {self.pdf_path}")
-            header_info, items = extract_pdf_data(self.pdf_path)
+            if self.template_key == 'lmt':
+                self.log.emit(f"  正在读取Excel: {self.pdf_path}")
+                header_info, items = parse_lmt_excel(self.pdf_path)
+            else:
+                self.log.emit(f"  正在读取PDF: {self.pdf_path}")
+                header_info, items = extract_pdf_data(self.pdf_path)
 
             self.log.emit("\n  ◆ 提取的头部信息:")
             labels = {
@@ -374,7 +378,7 @@ class MainWindow(QMainWindow):
         pdf_btn.setObjectName("browseBtn")
         pdf_btn.setFixedWidth(72)
         pdf_btn.setCursor(Qt.PointingHandCursor)
-        pdf_btn.clicked.connect(self.select_pdf)
+        pdf_btn.clicked.connect(self.select_input)
         file_layout.addWidget(pdf_btn, 0, 2)
 
         output_label = QLabel("输出路径:")
@@ -442,8 +446,11 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(log_group)
 
-    def select_pdf(self):
-        path, _ = QFileDialog.getOpenFileName(self, "选择PDF文件", "", "PDF files (*.pdf)")
+    def select_input(self):
+        if self.selected_template == 'lmt':
+            path, _ = QFileDialog.getOpenFileName(self, "选择Excel文件", "", "Excel files (*.xlsx *.xls)")
+        else:
+            path, _ = QFileDialog.getOpenFileName(self, "选择PDF文件", "", "PDF files (*.pdf)")
         if path:
             self.pdf_edit.setText(path)
             if not self.output_edit.text():
@@ -546,6 +553,42 @@ def extract_pdf_data(pdf_path):
             tables = page.extract_tables()
             all_tables.extend(tables)
     return parse_header(full_text), parse_items(all_tables)
+
+
+def parse_lmt_excel(excel_path):
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    ws = wb.active
+    info = {}
+    info['order_no'] = str(ws.cell(row=7, column=2).value or '').strip()
+    rec_org = str(ws.cell(row=2, column=2).value or '').strip()
+    sup_org = str(ws.cell(row=2, column=4).value or '').strip()
+    info['receiver_org'] = rec_org
+    info['supplier_org'] = sup_org
+    info['receiver_name'] = str(ws.cell(row=8, column=2).value or '').strip()
+    info['receiver_phone'] = str(ws.cell(row=8, column=5).value or '').strip()
+    info['receiver_address'] = str(ws.cell(row=8, column=14).value or '').strip()
+    ship_date = ws.cell(row=2, column=38).value
+    info['order_date'] = str(ship_date).strip() if ship_date else ''
+    items = []
+    r = 5
+    while r <= ws.max_row:
+        seq = ws.cell(row=r, column=1).value
+        if seq is None:
+            break
+        if str(seq).strip().isdigit():
+            item = {
+                'category': str(ws.cell(row=r, column=2).value or '').strip(),
+                'item_code': str(ws.cell(row=r, column=3).value or '').strip(),
+                'item_name': str(ws.cell(row=r, column=4).value or '').strip(),
+                'spec': str(ws.cell(row=r, column=6).value or '').strip(),
+                'unit': '',
+                'quantity': str(ws.cell(row=r, column=15).value or '0').strip(),
+                'remark': '',
+            }
+            if item['item_code'] and item['item_name']:
+                items.append(item)
+        r += 1
+    return info, items
 
 
 def parse_header(text):
