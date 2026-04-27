@@ -431,11 +431,20 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def append_log(self, text, path=None):
+        # Sanitize text - ensure no binary/raw file content leaks into log
+        if text and any(ord(c) > 0x10FFFF or (ord(c) < 32 and c not in '\n\r\t') for c in str(text)[:1000]):
+            return  # Skip if contains suspicious binary content
+
         if path:
-            escaped_path = path.replace("'", "&apos;").replace('"', '&quot;')
-            text = f'<span style="color:{COLOR["accent"]}; font-weight:700">{text}</span>'
-            text += f'<br>    <a href="file://{path}" style="color:#60A5FA; text-decoration:none; font-weight:600">📂 {path}</a>'
-            text += f'<br>    <span style="color:{COLOR["text-muted"]}; font-size:11px">点击路径可直接打开文件</span>'
+            # Sanitize path - only use if it looks like a valid file path
+            clean_path = str(path).strip()
+            if os.path.isabs(clean_path) and (clean_path.endswith('.xlsx') or clean_path.endswith('.xls')):
+                escaped_path = clean_path.replace("'", "&apos;").replace('"', '&quot;')
+                text = f'<span style="color:{COLOR["accent"]}; font-weight:700">{text}</span>'
+                text += f'<br>    <a href="file://{escaped_path}" style="color:#60A5FA; text-decoration:none; font-weight:600">📂 查看Excel文件</a>'
+                text += f'<br>    <span style="color:{COLOR["text-muted"]}; font-size:11px">点击路径可直接打开文件</span>'
+            else:
+                path = None  # Invalid path, treat as plain text
         elif text.startswith("  ✗"):
             text = f'<span style="color:{COLOR["error"]}">{text}</span>'
         elif text.startswith("  ✓"):
