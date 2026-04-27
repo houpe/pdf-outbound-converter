@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# 图标资源 (生成的)
+app_icon.ico
+app_icon.iconset/*.png
+
+# 测试/输出文件
+*_转换结果*.xlsx
+*.pdf
+
+# 临时文件
+*.tmp
+*.bak
+*.log
+
+# 资源目录保留
+!app_icon.iconset/
+!icon_source.png
+!icon.icns
+!app_icon.icns
+
+# 但排除转换结果和测试PDF
+!OMS出库.xlsx

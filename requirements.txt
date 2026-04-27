@@ -1,0 +1,16 @@
+# PDF出库单转Excel工具 依赖
+
+# GUI框架
+PySide6>=6.4.0
+
+# PDF解析
+pdfplumber>=0.7.0
+
+# Excel处理
+openpyxl>=3.1.0
+
+# 图标处理
+Pillow>=9.0.0
+
+# 打包工具 (可选，用于发布)
+pyinstaller>=5.0.0
