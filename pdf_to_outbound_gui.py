@@ -11,10 +11,10 @@ import sys
 import threading
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                  QHBoxLayout, QLabel, QLineEdit, QPushButton,
-                                 QTextEdit, QGroupBox, QFileDialog, QMessageBox,
+                                 QTextBrowser, QGroupBox, QFileDialog, QMessageBox,
                                  QProgressBar, QGridLayout, QFrame)
-from PySide6.QtCore import Qt, Signal, QThread
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtCore import Qt, Signal, QThread, QUrl
+from PySide6.QtGui import QFont, QIcon, QDesktopServices
 
 
 def resource_path(relative_path):
@@ -280,8 +280,9 @@ class ConversionWorker(QThread):
             self.log.emit("\n  ⚙ 正在生成Excel...")
             create_excel(header_info, items, self.template_path, self.output_path, self.merchant_code)
 
-            self.log.emit(f"\n  ✓ 转换完成! 共处理 {len(items)} 条记录")
-            self.log.emit(f"\n  💡 提示: 双击转换后的Excel文件即可打开编辑")
+            self.log.emit(f"\n  ◆ 输出文件:")
+            self.log.emit(f"    {self.output_path}")
+            self.log.emit(f"\n  💡 共处理 {len(items)} 条记录")
             self.finished.emit(True, self.output_path)
         except Exception as e:
             self.log.emit(f"\n  ✗ 错误: {str(e)}")
@@ -373,8 +374,10 @@ class MainWindow(QMainWindow):
         log_layout = QVBoxLayout(log_group)
         log_layout.setContentsMargins(14, 14, 14, 14)
 
-        self.log_text = QTextEdit()
+        self.log_text = QTextBrowser()
         self.log_text.setReadOnly(True)
+        self.log_text.setOpenExternalLinks(False)
+        self.log_text.anchorClicked.connect(self.on_link_clicked)
         log_layout.addWidget(self.log_text)
 
         main_layout.addWidget(log_group)
@@ -420,8 +423,20 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self.on_finished)
         self.worker.start()
 
-    def append_log(self, text):
-        if text.startswith("  ✗"):
+    def on_link_clicked(self, url):
+        path = url.toString()
+        if path.startswith("file://"):
+            path = path[7:]
+        if os.path.exists(path):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def append_log(self, text, path=None):
+        if path:
+            escaped_path = path.replace("'", "&apos;").replace('"', '&quot;')
+            text = f'<span style="color:{COLOR["accent"]}; font-weight:700">{text}</span>'
+            text += f'<br>    <a href="file://{path}" style="color:#60A5FA; text-decoration:none; font-weight:600">📂 {path}</a>'
+            text += f'<br>    <span style="color:{COLOR["text-muted"]}; font-size:11px">点击路径可直接打开文件</span>'
+        elif text.startswith("  ✗"):
             text = f'<span style="color:{COLOR["error"]}">{text}</span>'
         elif text.startswith("  ✓"):
             text = f'<span style="color:{COLOR["accent"]}; font-weight:700">{text}</span>'
@@ -441,8 +456,10 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         self.convert_btn.setEnabled(True)
         if success:
-            QMessageBox.information(self, "成功", f"转换完成!\n输出文件: {message}")
+            self.append_log("  ✓ 转换完成!", path=message)
+            QMessageBox.information(self, "成功", f"转换完成!\n输出文件: {message}\n\n点击日志中的路径可直接打开文件")
         else:
+            self.append_log(f"  ✗ 错误: {message}")
             QMessageBox.critical(self, "错误", message)
 
 
