@@ -12,7 +12,7 @@ import threading
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                  QHBoxLayout, QLabel, QLineEdit, QPushButton,
                                  QTextBrowser, QGroupBox, QFileDialog, QMessageBox,
-                                 QProgressBar, QGridLayout, QFrame)
+                                 QProgressBar, QGridLayout, QFrame, QComboBox)
 from PySide6.QtCore import Qt, Signal, QThread, QUrl
 from PySide6.QtGui import QFont, QIcon, QDesktopServices
 
@@ -190,6 +190,37 @@ QProgressBar::chunk {{
         stop:0 {COLOR["primary"]}, stop:1 {COLOR["accent"]});
     border-radius: 4px;
 }}
+
+/* ── QComboBox ───────────────────────────────────────── */
+QComboBox {{
+    background-color: {COLOR["input-bg"]};
+    border: 1.5px solid {COLOR["input-border"]};
+    border-radius: 8px;
+    padding: 7px 28px 7px 12px;
+    font-size: 13px;
+    color: {COLOR["text"]};
+}}
+
+QComboBox:hover {{
+    border: 1.5px solid {COLOR["accent"]};
+}}
+
+QComboBox:focus {{
+    border: 1.5px solid {COLOR["input-focus"]};
+}}
+
+QComboBox::drop-down {{
+    border: none;
+    width: 24px;
+    padding-right: 2px;
+}}
+
+QComboBox QAbstractItemView {{
+    background-color: {COLOR["card"]};
+    border: 1px solid {COLOR["card-border"]};
+    selection-background-color: {COLOR["primary-10"]};
+    selection-color: {COLOR["primary"]};
+}}
 """
 
 
@@ -247,19 +278,32 @@ class HeaderWidget(QWidget):
         self._layout.addStretch()
 
 
+TEMPLATES = {
+    'qzz': 'OMS出库.xlsx',
+    'lmt': '黎明屯铁锅炖模板.xlsx',
+}
+
+TEMPLATE_NAMES = {
+    'qzz': '黔寨寨贵州烙锅',
+    'lmt': '黎明屯铁锅炖',
+}
+
+
 class ConversionWorker(QThread):
     log = Signal(str)
     finished = Signal(bool, str)
 
-    def __init__(self, pdf_path, output_path, merchant_code, template_path):
+    def __init__(self, pdf_path, output_path, merchant_code, template_path, template_key):
         super().__init__()
         self.pdf_path = pdf_path
         self.output_path = output_path
         self.merchant_code = merchant_code
         self.template_path = template_path
+        self.template_key = template_key
 
     def run(self):
         try:
+            self.log.emit(f"  📋 模板: {TEMPLATE_NAMES.get(self.template_key, '')}")
             self.log.emit(f"  正在读取PDF: {self.pdf_path}")
             header_info, items = extract_pdf_data(self.pdf_path)
 
@@ -278,7 +322,7 @@ class ConversionWorker(QThread):
                 self.log.emit(f"    {item['item_code']} - {item['item_name']} x {item['quantity']} {item['unit']}")
 
             self.log.emit("\n  ⚙ 正在生成Excel...")
-            create_excel(header_info, items, self.template_path, self.output_path, self.merchant_code)
+            create_excel(header_info, items, self.template_path, self.output_path, self.merchant_code, self.template_key)
 
             self.log.emit(f"\n  ◆ 输出文件:")
             self.log.emit(f"    {self.output_path}")
@@ -296,8 +340,10 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(720, 600)
         self.resize(780, 660)
 
+        self.selected_template = 'qzz'
+
         # 使用资源路径，以支持打包后的可执行文件
-        self.template_path = resource_path('OMS出库.xlsx')
+        self.template_path = resource_path(TEMPLATES['qzz'])
 
         self.init_ui()
 
@@ -351,6 +397,19 @@ class MainWindow(QMainWindow):
 
         self.merchant_edit = PathEdit("请输入商户编码")
         file_layout.addWidget(self.merchant_edit, 2, 1)
+
+        template_label = QLabel("选择模板:")
+        template_label.setStyleSheet(f"color:{COLOR['text-muted']}; font-weight:600; font-size:12px;")
+        file_layout.addWidget(template_label, 3, 0)
+
+        self.template_combo = QComboBox()
+        self.template_combo.setObjectName("templateCombo")
+        for key, name in TEMPLATE_NAMES.items():
+            self.template_combo.addItem(name, key)
+        self.template_combo.setCurrentText(TEMPLATE_NAMES['qzz'])
+        self.template_combo.setCursor(Qt.PointingHandCursor)
+        self.template_combo.currentIndexChanged.connect(self.on_template_changed)
+        file_layout.addWidget(self.template_combo, 3, 1)
 
         main_layout.addWidget(file_group)
 
@@ -419,10 +478,14 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 0)
         self.log_text.clear()
 
-        self.worker = ConversionWorker(pdf_path, output_path, merchant_code, self.template_path)
+        self.worker = ConversionWorker(pdf_path, output_path, merchant_code, self.template_path, self.selected_template)
         self.worker.log.connect(self.append_log)
         self.worker.finished.connect(self.on_finished)
         self.worker.start()
+
+    def on_template_changed(self):
+        self.selected_template = self.template_combo.currentData()
+        self.template_path = resource_path(TEMPLATES[self.selected_template])
 
     def on_link_clicked(self, url):
         path = url.toString()
@@ -527,13 +590,11 @@ def parse_items(tables):
     return items
 
 
-def create_excel(header_info, items, template_path, output_path, merchant_code=''):
-    wb = openpyxl.load_workbook(template_path)
-    ws = wb.active
+def create_excel_qzz(header_info, items, ws, merchant_code=''):
+    receiver_info = f"{header_info.get('receiver_name', '')},{header_info.get('receiver_phone', '')},{header_info.get('receiver_address', '')}"
     for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=10):
         for cell in row:
             cell.value = None
-    receiver_info = f"{header_info.get('receiver_name', '')},{header_info.get('receiver_phone', '')},{header_info.get('receiver_address', '')}"
     for i, item in enumerate(items, start=3):
         ws.cell(row=i, column=1, value=header_info.get('order_no', ''))
         ws.cell(row=i, column=2, value=merchant_code)
@@ -545,6 +606,51 @@ def create_excel(header_info, items, template_path, output_path, merchant_code='
         ws.cell(row=i, column=8, value=int(item['quantity']) if item['quantity'].isdigit() else item['quantity'])
         ws.cell(row=i, column=9, value=header_info.get('receiver_org', ''))
         ws.cell(row=i, column=10, value=item['item_name'])
+
+
+def create_excel_lmt(header_info, items, ws):
+    for r in range(5, ws.max_row + 1):
+        for c in range(1, ws.max_column + 1):
+            ws.cell(row=r, column=c).value = None
+
+    ws.cell(row=2, column=1, value='收货机构')
+    ws.cell(row=2, column=2, value=header_info.get('receiver_org', ''))
+    ws.cell(row=2, column=3, value='供货机构')
+    ws.cell(row=2, column=4, value=header_info.get('supplier_org', ''))
+    ws.cell(row=2, column=5, value='送货机构')
+    ws.cell(row=2, column=6, value=header_info.get('supplier_org', ''))
+    ws.cell(row=2, column=7, value='订货机构')
+    ws.cell(row=2, column=8, value=header_info.get('receiver_org', ''))
+    if header_info.get('order_date'):
+        ws.cell(row=2, column=37, value='预计发货日期')
+        ws.cell(row=2, column=38, value=header_info.get('order_date'))
+        ws.cell(row=2, column=39, value='预计到货日期')
+        ws.cell(row=2, column=40, value='')
+        ws.cell(row=2, column=41, value='期望到货日期')
+        ws.cell(row=2, column=42, value=header_info.get('order_date'))
+
+    ws.cell(row=8, column=1, value='收货人')
+    ws.cell(row=8, column=2, value=header_info.get('receiver_name', ''))
+    ws.cell(row=8, column=4, value='收货电话')
+    ws.cell(row=8, column=5, value=header_info.get('receiver_phone', ''))
+    ws.cell(row=8, column=8, value='收货地址')
+    ws.cell(row=8, column=9, value=header_info.get('receiver_address', ''))
+
+    for i, item in enumerate(items, start=5):
+        ws.cell(row=i, column=1, value=i - 4)
+        ws.cell(row=i, column=3, value=item['item_code'])
+        ws.cell(row=i, column=4, value=item['item_name'])
+        ws.cell(row=i, column=6, value=item['spec'])
+        ws.cell(row=i, column=15, value=int(item['quantity']) if item['quantity'].isdigit() else item['quantity'])
+
+
+def create_excel(header_info, items, template_path, output_path, merchant_code='', template_key='qzz'):
+    wb = openpyxl.load_workbook(template_path)
+    ws = wb.active
+    if template_key == 'lmt':
+        create_excel_lmt(header_info, items, ws)
+    else:
+        create_excel_qzz(header_info, items, ws, merchant_code)
     wb.save(output_path)
 
 
