@@ -377,6 +377,7 @@ class MainWindow(QMainWindow):
         self.log_text = QTextBrowser()
         self.log_text.setReadOnly(True)
         self.log_text.setOpenExternalLinks(False)
+        self.log_text.setOpenLinks(False)
         self.log_text.anchorClicked.connect(self.on_link_clicked)
         log_layout.addWidget(self.log_text)
 
