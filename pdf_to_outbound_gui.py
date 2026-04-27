@@ -280,7 +280,7 @@ class HeaderWidget(QWidget):
 
 TEMPLATES = {
     'qzz': 'OMS出库.xlsx',
-    'lmt': '黎明屯铁锅炖模板.xlsx',
+    'lmt': 'OMS出库.xlsx',
 }
 
 TEMPLATE_NAMES = {
@@ -367,44 +367,9 @@ class MainWindow(QMainWindow):
         file_layout.setSpacing(12)
         file_layout.setColumnStretch(1, 1)
 
-        pdf_label = QLabel("PDF文件:")
-        pdf_label.setStyleSheet(f"color:{COLOR['text-muted']}; font-weight:600; font-size:12px;")
-        file_layout.addWidget(pdf_label, 0, 0)
-
-        self.pdf_edit = PathEdit("选择PDF出库单文件...")
-        file_layout.addWidget(self.pdf_edit, 0, 1)
-
-        pdf_btn = QPushButton("浏览")
-        pdf_btn.setObjectName("browseBtn")
-        pdf_btn.setFixedWidth(72)
-        pdf_btn.setCursor(Qt.PointingHandCursor)
-        pdf_btn.clicked.connect(self.select_input)
-        file_layout.addWidget(pdf_btn, 0, 2)
-
-        output_label = QLabel("输出路径:")
-        output_label.setStyleSheet(f"color:{COLOR['text-muted']}; font-weight:600; font-size:12px;")
-        file_layout.addWidget(output_label, 1, 0)
-
-        self.output_edit = PathEdit("自动生成默认文件名...")
-        file_layout.addWidget(self.output_edit, 1, 1)
-
-        output_btn = QPushButton("浏览")
-        output_btn.setObjectName("browseBtn")
-        output_btn.setFixedWidth(72)
-        output_btn.setCursor(Qt.PointingHandCursor)
-        output_btn.clicked.connect(self.select_output)
-        file_layout.addWidget(output_btn, 1, 2)
-
-        merchant_label = QLabel("商户编码:")
-        merchant_label.setStyleSheet(f"color:{COLOR['text-muted']}; font-weight:600; font-size:12px;")
-        file_layout.addWidget(merchant_label, 2, 0)
-
-        self.merchant_edit = PathEdit("请输入商户编码")
-        file_layout.addWidget(self.merchant_edit, 2, 1)
-
         template_label = QLabel("选择模板:")
         template_label.setStyleSheet(f"color:{COLOR['text-muted']}; font-weight:600; font-size:12px;")
-        file_layout.addWidget(template_label, 3, 0)
+        file_layout.addWidget(template_label, 0, 0)
 
         self.template_combo = QComboBox()
         self.template_combo.setObjectName("templateCombo")
@@ -413,7 +378,42 @@ class MainWindow(QMainWindow):
         self.template_combo.setCurrentText(TEMPLATE_NAMES['qzz'])
         self.template_combo.setCursor(Qt.PointingHandCursor)
         self.template_combo.currentIndexChanged.connect(self.on_template_changed)
-        file_layout.addWidget(self.template_combo, 3, 1)
+        file_layout.addWidget(self.template_combo, 0, 1)
+
+        self.pdf_label = QLabel("PDF文件:")
+        self.pdf_label.setStyleSheet(f"color:{COLOR['text-muted']}; font-weight:600; font-size:12px;")
+        file_layout.addWidget(self.pdf_label, 1, 0)
+
+        self.pdf_edit = PathEdit("选择PDF出库单文件...")
+        file_layout.addWidget(self.pdf_edit, 1, 1)
+
+        pdf_btn = QPushButton("浏览")
+        pdf_btn.setObjectName("browseBtn")
+        pdf_btn.setFixedWidth(72)
+        pdf_btn.setCursor(Qt.PointingHandCursor)
+        pdf_btn.clicked.connect(self.select_input)
+        file_layout.addWidget(pdf_btn, 1, 2)
+
+        output_label = QLabel("输出路径:")
+        output_label.setStyleSheet(f"color:{COLOR['text-muted']}; font-weight:600; font-size:12px;")
+        file_layout.addWidget(output_label, 2, 0)
+
+        self.output_edit = PathEdit("自动生成默认文件名...")
+        file_layout.addWidget(self.output_edit, 2, 1)
+
+        output_btn = QPushButton("浏览")
+        output_btn.setObjectName("browseBtn")
+        output_btn.setFixedWidth(72)
+        output_btn.setCursor(Qt.PointingHandCursor)
+        output_btn.clicked.connect(self.select_output)
+        file_layout.addWidget(output_btn, 2, 2)
+
+        merchant_label = QLabel("商户编码:")
+        merchant_label.setStyleSheet(f"color:{COLOR['text-muted']}; font-weight:600; font-size:12px;")
+        file_layout.addWidget(merchant_label, 3, 0)
+
+        self.merchant_edit = PathEdit("请输入商户编码")
+        file_layout.addWidget(self.merchant_edit, 3, 1)
 
         main_layout.addWidget(file_group)
 
@@ -468,7 +468,7 @@ class MainWindow(QMainWindow):
         merchant_code = self.merchant_edit.text().strip()
 
         if not pdf_path:
-            QMessageBox.warning(self, "警告", "请选择PDF文件")
+            QMessageBox.warning(self, "警告", f"请选择{self.pdf_label.text()}")
             return
         if not os.path.exists(pdf_path):
             QMessageBox.critical(self, "错误", f"找不到文件: {pdf_path}")
@@ -493,6 +493,13 @@ class MainWindow(QMainWindow):
     def on_template_changed(self):
         self.selected_template = self.template_combo.currentData()
         self.template_path = resource_path(TEMPLATES[self.selected_template])
+        
+        if self.selected_template == 'lmt':
+            self.pdf_label.setText("Excel文件:")
+            self.pdf_edit.setPlaceholderText("选择Excel入库单文件...")
+        else:
+            self.pdf_label.setText("PDF文件:")
+            self.pdf_edit.setPlaceholderText("选择PDF出库单文件...")
 
     def on_link_clicked(self, url):
         path = url.toString()
@@ -567,7 +574,7 @@ def parse_lmt_excel(excel_path):
     info['receiver_name'] = str(ws.cell(row=8, column=2).value or '').strip()
     info['receiver_phone'] = str(ws.cell(row=8, column=5).value or '').strip()
     info['receiver_address'] = str(ws.cell(row=8, column=14).value or '').strip()
-    ship_date = ws.cell(row=2, column=38).value
+    ship_date = ws.cell(row=2, column=36).value
     info['order_date'] = str(ship_date).strip() if ship_date else ''
     items = []
     r = 5
@@ -651,49 +658,17 @@ def create_excel_qzz(header_info, items, ws, merchant_code=''):
         ws.cell(row=i, column=10, value=item['item_name'])
 
 
-def create_excel_lmt(header_info, items, ws):
-    for r in range(5, ws.max_row + 1):
-        for c in range(1, ws.max_column + 1):
-            ws.cell(row=r, column=c).value = None
-
-    ws.cell(row=2, column=1, value='收货机构')
-    ws.cell(row=2, column=2, value=header_info.get('receiver_org', ''))
-    ws.cell(row=2, column=3, value='供货机构')
-    ws.cell(row=2, column=4, value=header_info.get('supplier_org', ''))
-    ws.cell(row=2, column=5, value='送货机构')
-    ws.cell(row=2, column=6, value=header_info.get('supplier_org', ''))
-    ws.cell(row=2, column=7, value='订货机构')
-    ws.cell(row=2, column=8, value=header_info.get('receiver_org', ''))
-    if header_info.get('order_date'):
-        ws.cell(row=2, column=37, value='预计发货日期')
-        ws.cell(row=2, column=38, value=header_info.get('order_date'))
-        ws.cell(row=2, column=39, value='预计到货日期')
-        ws.cell(row=2, column=40, value='')
-        ws.cell(row=2, column=41, value='期望到货日期')
-        ws.cell(row=2, column=42, value=header_info.get('order_date'))
-
-    ws.cell(row=8, column=1, value='收货人')
-    ws.cell(row=8, column=2, value=header_info.get('receiver_name', ''))
-    ws.cell(row=8, column=4, value='收货电话')
-    ws.cell(row=8, column=5, value=header_info.get('receiver_phone', ''))
-    ws.cell(row=8, column=8, value='收货地址')
-    ws.cell(row=8, column=9, value=header_info.get('receiver_address', ''))
-
-    for i, item in enumerate(items, start=5):
-        ws.cell(row=i, column=1, value=i - 4)
-        ws.cell(row=i, column=3, value=item['item_code'])
-        ws.cell(row=i, column=4, value=item['item_name'])
-        ws.cell(row=i, column=6, value=item['spec'])
-        ws.cell(row=i, column=15, value=int(item['quantity']) if item['quantity'].isdigit() else item['quantity'])
+def create_excel_lmt(header_info, items, ws, merchant_code=''):
+    create_excel_qzz(header_info, items, ws, merchant_code)
 
 
 def create_excel(header_info, items, template_path, output_path, merchant_code='', template_key='qzz'):
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
-    if template_key == 'lmt':
-        create_excel_lmt(header_info, items, ws)
-    else:
-        create_excel_qzz(header_info, items, ws, merchant_code)
+    for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=10):
+        for cell in row:
+            cell.value = None
+    create_excel_qzz(header_info, items, ws, merchant_code)
     wb.save(output_path)
 
 
