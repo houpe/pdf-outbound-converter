@@ -280,12 +280,14 @@ class HeaderWidget(QWidget):
 
 TEMPLATES = {
     'qzz': 'OMS出库.xlsx',
-    'lmt': 'OMS出库.xlsx',
+    'lmt': '黎明屯铁锅炖模板.xlsx',
+    'hlmc': '欢乐牧场模板.xlsx',
 }
 
 TEMPLATE_NAMES = {
     'qzz': '黔寨寨贵州烙锅',
     'lmt': '黎明屯铁锅炖',
+    'hlmc': '欢乐牧场',
 }
 
 
@@ -307,6 +309,9 @@ class ConversionWorker(QThread):
             if self.template_key == 'lmt':
                 self.log.emit(f"  正在读取Excel: {self.pdf_path}")
                 header_info, items = parse_lmt_excel(self.pdf_path)
+            elif self.template_key == 'hlmc':
+                self.log.emit(f"  正在读取Excel: {self.pdf_path}")
+                header_info, items = parse_hlmc_excel(self.pdf_path)
             else:
                 self.log.emit(f"  正在读取PDF: {self.pdf_path}")
                 header_info, items = extract_pdf_data(self.pdf_path)
@@ -447,7 +452,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(log_group)
 
     def select_input(self):
-        if self.selected_template == 'lmt':
+        if self.selected_template in ('lmt', 'hlmc'):
             path, _ = QFileDialog.getOpenFileName(self, "选择Excel文件", "", "Excel files (*.xlsx *.xls)")
         else:
             path, _ = QFileDialog.getOpenFileName(self, "选择PDF文件", "", "PDF files (*.pdf)")
@@ -494,9 +499,9 @@ class MainWindow(QMainWindow):
         self.selected_template = self.template_combo.currentData()
         self.template_path = resource_path(TEMPLATES[self.selected_template])
         
-        if self.selected_template == 'lmt':
+        if self.selected_template in ('lmt', 'hlmc'):
             self.pdf_label.setText("Excel文件:")
-            self.pdf_edit.setPlaceholderText("选择Excel入库单文件...")
+            self.pdf_edit.setPlaceholderText("选择Excel模板文件...")
         else:
             self.pdf_label.setText("PDF文件:")
             self.pdf_edit.setPlaceholderText("选择PDF出库单文件...")
@@ -596,6 +601,63 @@ def parse_lmt_excel(excel_path):
                 items.append(item)
         r += 1
     return info, items
+
+
+def parse_hlmc_excel(excel_path):
+    import openpyxl
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    ws = wb.active
+    all_records = []
+    
+    header_row = ws[1]
+    col_unit = 5  # Column E (1-indexed)
+    col_surplus = 11  # Column K (1-indexed)
+    
+    # Find 店铺列 (between 单位 and 下单后结余)
+    shop_cols = {}
+    for c in range(col_unit + 1, col_surplus):
+        shop_name = str(header_row[c-1].value or '').strip()
+        if shop_name:
+            shop_cols[c] = shop_name
+    
+    # Parse product rows starting from row 2
+    r = 2
+    while r <= ws.max_row:
+        item_code = ws.cell(row=r, column=1).value
+        item_name = ws.cell(row=r, column=2).value
+        unit = str(ws.cell(row=r, column=col_unit).value or '').strip()
+        
+        for col_idx, shop_name in shop_cols.items():
+            qty = ws.cell(row=r, column=col_idx).value
+            if qty and float(qty) > 0:
+                all_records.append({
+                    'item_code': str(item_code or '').strip(),
+                    'item_name': str(item_name or '').strip(),
+                    'quantity': str(int(float(qty))),
+                    'unit': unit,
+                    'spec': '',
+                    'category': '',
+                    'remark': '',
+                    'receiver_org': shop_name,
+                    'receiver_name': '',
+                    'receiver_phone': '',
+                    'receiver_address': '',
+                    'order_no': '',
+                    'supplier_org': '',
+                    'order_date': '',
+                })
+        r += 1
+    
+    info = {
+        'order_no': '',
+        'receiver_org': '',
+        'supplier_org': '',
+        'receiver_name': '',
+        'receiver_phone': '',
+        'receiver_address': '',
+        'order_date': '',
+    }
+    return info, all_records
 
 
 def parse_header(text):
