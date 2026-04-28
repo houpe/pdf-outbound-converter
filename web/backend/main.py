@@ -84,6 +84,7 @@ async def convert_file(
         merchant_code = template_cfg["merchant_code"]
 
     all_items = []
+    header_info = {}
     parsed_files = 0
 
     for file in files:
@@ -105,13 +106,21 @@ async def convert_file(
 
         try:
             if template_key == "lmt":
-                header_info, items = parse_lmt_excel(str(upload_path), file.filename)
+                file_header, items = parse_lmt_excel(str(upload_path), file.filename)
             elif template_key == "hlmc":
-                header_info, items = parse_hlmc_excel(str(upload_path))
+                file_header, items = parse_hlmc_excel(str(upload_path))
             else:
-                header_info, items = extract_pdf_data(str(upload_path))
+                file_header, items = extract_pdf_data(str(upload_path))
+
+            for item in items:
+                item.setdefault("receiver_org", file_header.get("receiver_org", ""))
+                item.setdefault("receiver_name", file_header.get("receiver_name", ""))
+                item.setdefault("receiver_phone", file_header.get("receiver_phone", ""))
+                item.setdefault("receiver_address", file_header.get("receiver_address", ""))
 
             all_items.extend(items)
+            if file_header.get("receiver_org"):
+                header_info = file_header
             parsed_files += 1
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"文件 '{file.filename}' 转换失败: {str(e)}")
@@ -122,19 +131,40 @@ async def convert_file(
     if not all_items:
         raise HTTPException(status_code=400, detail="未能解析到任何商品数据")
 
-    output_filename = f"{uuid.uuid4().hex}.xlsx"
+    from datetime import date
+    today = date.today().strftime("%Y%m%d")
+    out_name = f"{template_cfg['name']}_{today}"
+    
+    output_filename = f"{out_name}.xlsx"
     output_path = DOWNLOADS_DIR / output_filename
+    counter = 1
+    while output_path.exists():
+        output_filename = f"{out_name}_{counter}.xlsx"
+        output_path = DOWNLOADS_DIR / output_filename
+        counter += 1
+
 
     oms_template_path = str(OMS_TEMPLATE)
     if not os.path.exists(oms_template_path):
         raise HTTPException(status_code=500, detail=f"模板文件不存在: {oms_template_path}")
 
     try:
-        create_excel({}, all_items, oms_template_path, str(output_path), merchant_code, template_key)
+        create_excel(header_info, all_items, oms_template_path, str(output_path), merchant_code, template_key)
     except Exception as e:
         if output_path.exists():
             os.remove(output_path)
         raise HTTPException(status_code=500, detail=f"生成结果文件失败: {str(e)}")
+
+    stores = set()
+    total_qty = 0
+    for it in all_items:
+        org = it.get("receiver_org", "")
+        if org:
+            stores.add(org)
+        try:
+            total_qty += int(float(it["quantity"]))
+        except (ValueError, TypeError):
+            pass
 
     return {
         "success": True,
@@ -142,6 +172,8 @@ async def convert_file(
         "download_url": f"/downloads/{output_filename}",
         "item_count": len(all_items),
         "parsed_files": parsed_files,
+        "store_count": len(stores),
+        "total_quantity": total_qty,
     }
 
 
@@ -214,14 +246,29 @@ def parse_items(tables):
 
 
 def _extract_shop_name(filename):
-    raw = os.path.splitext(filename)[0]
-    match = re.match(r"^\d+\.\d+([^-]+?)-", raw)
+    raw = os.path.splitext(os.path.basename(filename))[0]
+    match = re.match(r"^\d+\.\d+(.+?)(?:[-—_（(]|$)", raw)
     if match:
         return match.group(1).strip()
-    parts = raw.split("-")
-    if parts:
-        return re.sub(r"^[\d.]+", "", parts[0]).strip()
-    return raw.strip()
+    return re.sub(r"^[\d./]+", "", raw).strip()
+
+
+def _find_row_label(ws, texts):
+    for r in range(1, ws.max_row + 1):
+        v = str(ws.cell(row=r, column=1).value or "").strip()
+        if v in texts:
+            return r
+    return None
+
+
+def search_all_cols(ws, target):
+    cells = []
+    for r in range(1, ws.max_row + 1):
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(row=r, column=c).value
+            if v and str(v).strip() == target:
+                cells.append((r, c))
+    return cells
 
 
 def parse_lmt_excel(excel_path, filename=""):
@@ -230,38 +277,108 @@ def parse_lmt_excel(excel_path, filename=""):
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     ws = wb.active
     info = {}
-    info["order_no"] = str(ws.cell(row=7, column=2).value or "").strip()
-    rec_org = str(ws.cell(row=2, column=2).value or "").strip()
-    sup_org = str(ws.cell(row=2, column=4).value or "").strip()
-    info["receiver_org"] = shop_name if shop_name else rec_org
-    info["supplier_org"] = sup_org
-    rec_name = str(ws.cell(row=8, column=2).value or "").strip()
-    rec_phone_val = ws.cell(row=8, column=5).value
-    if isinstance(rec_phone_val, float) and rec_phone_val == int(rec_phone_val):
-        rec_phone_val = int(rec_phone_val)
-    info["receiver_phone"] = str(rec_phone_val or "").strip()
-    info["receiver_address"] = str(ws.cell(row=8, column=14).value or "").strip()
-    info["receiver_name"] = rec_name if rec_name else (shop_name or "")
+
+    cells = search_all_cols(ws, "收货机构")
+    info["receiver_org"] = ""
+    for r, c in cells:
+        val = str(ws.cell(row=r, column=c + 1).value or "").strip()
+        if val and val != "订货机构":
+            info["receiver_org"] = val
+            break
+    if shop_name:
+        info["receiver_org"] = shop_name
+
+    cells = search_all_cols(ws, "供货机构")
+    info["supplier_org"] = ""
+    for r, c in cells:
+        val = str(ws.cell(row=r, column=c + 1).value or "").strip()
+        if val and val != "送货机构":
+            info["supplier_org"] = val
+            break
+
+    r_no = _find_row_label(ws, {"单据号"})
+    info["order_no"] = ""
+    if r_no:
+        info["order_no"] = str(ws.cell(row=r_no, column=2).value or "").strip()
+
+    r_rec = _find_row_label(ws, {"收货人"})
+    if r_rec:
+        rec_name = str(ws.cell(row=r_rec, column=2).value or "").strip()
+        cells = search_all_cols(ws, "收货电话")
+        rec_phone_val = ""
+        if cells:
+            for rr, cc in cells:
+                v = ws.cell(row=rr, column=cc + 1).value
+                if v is not None:
+                    rec_phone_val = v
+                    break
+        if isinstance(rec_phone_val, float) and rec_phone_val == int(rec_phone_val):
+            rec_phone_val = int(rec_phone_val)
+        if isinstance(rec_phone_val, (int, float)):
+            rec_phone_val = str(rec_phone_val)
+
+        cells = search_all_cols(ws, "收货地址")
+        rec_addr = ""
+        if cells:
+            for rr, cc in cells:
+                v = ws.cell(row=rr, column=cc + 1).value
+                if v is not None:
+                    rec_addr = str(v).strip()
+                    break
+
+        info["receiver_name"] = rec_name if rec_name else (shop_name or "")
+        info["receiver_phone"] = str(rec_phone_val or "").strip()
+        info["receiver_address"] = rec_addr
+    else:
+        info["receiver_name"] = shop_name if shop_name else ""
+        info["receiver_phone"] = ""
+        info["receiver_address"] = ""
 
     items = []
-    r = 5
-    while r <= ws.max_row:
-        seq = ws.cell(row=r, column=1).value
-        if seq is None:
+    header_col = None
+    header_row = None
+    qty_cols = []
+    for r in range(1, min(ws.max_row + 1, 6)):
+        for c in range(1, ws.max_column + 1):
+            v = str(ws.cell(row=r, column=c).value or "").strip()
+            if v in ("物品编码", "商品编码"):
+                header_col = c
+                header_row = r
+            elif v == "发货数量":
+                qty_cols.append(c)
+        if header_col:
             break
-        if str(seq).strip().isdigit():
+
+    qty_col = None
+    for label in ("发货数量", "订货数量", "接单数量"):
+        cells = search_all_cols(ws, label)
+        if cells:
+            qty_col = cells[0][1]
+            break
+    if qty_col is None:
+        qty_col = header_col + 12 if header_col else 15
+
+    if header_col and header_row:
+        for r in range(header_row + 1, ws.max_row + 1):
+            c3 = ws.cell(row=r, column=header_col).value
+            c4 = ws.cell(row=r, column=header_col + 1).value
+            if not c3 or not c4:
+                continue
+            c3s = str(c3).strip()
+            if not c3s or c3s in ("物品编码", "商品编码", "合计") or c3s == "上游单据":
+                continue
             item = {
-                "category": str(ws.cell(row=r, column=2).value or "").strip(),
-                "item_code": str(ws.cell(row=r, column=3).value or "").strip(),
-                "item_name": str(ws.cell(row=r, column=4).value or "").strip(),
-                "spec": str(ws.cell(row=r, column=6).value or "").strip(),
+                "category": str(ws.cell(row=r, column=header_col - 1).value or "").strip(),
+                "item_code": c3s,
+                "item_name": str(c4).strip(),
+                "spec": str(ws.cell(row=r, column=header_col + 2).value or "").strip(),
                 "unit": "",
-                "quantity": str(ws.cell(row=r, column=15).value or "0").strip(),
+                "quantity": str(ws.cell(row=r, column=qty_col).value or "0").strip(),
                 "remark": "",
             }
             if item["item_code"] and item["item_name"]:
                 items.append(item)
-        r += 1
+
     return info, items
 
 
@@ -376,23 +493,25 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
                 cell.value = None
 
     for i, item in enumerate(items, start=3):
+        item_receiver_name = item.get("receiver_name", header_info.get("receiver_name", ""))
+        item_receiver_phone = item.get("receiver_phone", header_info.get("receiver_phone", ""))
+        item_receiver_address = item.get("receiver_address", header_info.get("receiver_address", ""))
+        item_receiver_org = item.get("receiver_org", header_info.get("receiver_org", ""))
+
         ws.cell(row=i, column=1, value=header_info.get("order_no", ""))
         ws.cell(row=i, column=2, value=merchant_code)
         ws.cell(row=i, column=3, value="ZTOWHHY001")
         ws.cell(row=i, column=4, value="")
-        ws.cell(
-            row=i,
-            column=5,
-            value=f"{header_info.get('receiver_name', '')},{header_info.get('receiver_phone', '')},{header_info.get('receiver_address', '')}",
-        )
+        ws.cell(row=i, column=5, value=f"{item_receiver_name},{item_receiver_phone},{item_receiver_address}")
         ws.cell(row=i, column=6, value=item["item_code"])
         ws.cell(row=i, column=7, value="")
-        ws.cell(
-            row=i,
-            column=8,
-            value=int(item["quantity"]) if str(item["quantity"]).isdigit() else item["quantity"],
-        )
-        ws.cell(row=i, column=9, value=item.get("receiver_org", header_info.get("receiver_org", "")))
+        quantity_val = str(item["quantity"]).strip()
+        try:
+            quantity_val = int(float(quantity_val))
+        except (ValueError, TypeError):
+            pass
+        ws.cell(row=i, column=8, value=quantity_val)
+        ws.cell(row=i, column=9, value=item_receiver_org)
         ws.cell(row=i, column=10, value=item["item_name"])
 
     wb.save(output_path)

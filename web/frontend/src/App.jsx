@@ -238,6 +238,8 @@ export default function App() {
               <div className="result-header"><IconCheck /><h3>转换成功</h3></div>
               <div className="result-body">
                 <div className="result-row"><span>模板</span><strong>{template.name}</strong></div>
+                <div className="result-row"><span>涉及店铺</span><strong>{result.store_count} 个</strong></div>
+                <div className="result-row"><span>商品合计</span><strong>{result.total_quantity} 件</strong></div>
                 <div className="result-row"><span>记录数</span><strong>{result.item_count} 条</strong></div>
                 <div className="result-row"><span>文件</span><strong className="filename">{result.filename}</strong></div>
               </div>
