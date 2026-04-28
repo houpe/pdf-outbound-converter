@@ -37,6 +37,10 @@ app_icon.iconset/*.png
 *.log
 .~*
 
+# Web 运行时目录
+web/backend/uploads/
+web/backend/downloads/
+
 # 保留资源
 !app_icon.iconset/
 !icon_source.png

@@ -1,17 +1,18 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
 
 const API_BASE = import.meta.env.PROD ? '/wms/api' : '/api'
 const DOWNLOAD_BASE = import.meta.env.PROD ? '/wms/downloads' : '/downloads'
 
-const TEMPLATES_DEFAULTS = {
+// Fallback used only during initial load / network error
+const FALLBACK_TEMPLATES = {
   qzz:  { name: '黔寨寨贵州烙锅', accept: '.pdf',        merchant_code: 'Q20260427013' },
   lmt:  { name: '黎明屯铁锅炖',   accept: '.xlsx,.xls', merchant_code: 'Q20260427017' },
   hlmc: { name: '欢乐牧场',       accept: '.xlsx,.xls', merchant_code: 'Q20260427015' },
 }
 
-const getAcceptExts = (key) => TEMPLATES_DEFAULTS[key]?.accept.split(',').map(s => s.trim()) || ['.pdf']
+const getAcceptExts = (accept) => accept.split(',').map(s => s.trim())
 
 function IconUpload() {
   return (
@@ -59,25 +60,47 @@ function IconSparkle() {
 }
 
 export default function App() {
+  const [templates, setTemplates] = useState(FALLBACK_TEMPLATES)
   const [templateKey, setTemplateKey] = useState('qzz')
-  const [merchantCode, setMerchantCode] = useState(TEMPLATES_DEFAULTS.qzz.merchant_code)
+  const [merchantCode, setMerchantCode] = useState(FALLBACK_TEMPLATES.qzz.merchant_code)
   const [files, setFiles] = useState([])
   const [progress, setProgress] = useState(null)
   const [result, setResult] = useState(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [logLines, setLogLines] = useState([])
+  const logCounter = useRef(0)
   const fileInputRef = useRef(null)
 
-  const template = TEMPLATES_DEFAULTS[templateKey]
-  const acceptExts = getAcceptExts(templateKey)
+  // Fetch templates from backend on mount
+  useEffect(() => {
+    axios.get(`${API_BASE}/templates`)
+      .then(res => {
+        const map = {}
+        for (const t of res.data.templates) {
+          map[t.key] = { name: t.name, accept: t.accept, merchant_code: t.default_merchant_code }
+        }
+        setTemplates(map)
+        // Sync current selection
+        const firstKey = res.data.templates[0]?.key
+        if (firstKey) {
+          setTemplateKey(firstKey)
+          setMerchantCode(map[firstKey].merchant_code)
+        }
+      })
+      .catch(() => setLogLines([{ msg: '⚠️ 无法获取模板列表，使用本地缓存', type: 'warn', id: Date.now() }]))
+  }, [])
+
+  const template = templates[templateKey] || FALLBACK_TEMPLATES[templateKey]
+  const acceptExts = template ? getAcceptExts(template.accept) : ['.pdf']
 
   const addLine = useCallback((msg, type = 'info') => {
-    setLogLines(prev => [...prev, { msg, type, ts: Date.now() }])
+    logCounter.current += 1
+    setLogLines(prev => [...prev, { msg, type, id: logCounter.current }])
   }, [])
 
   const handleTemplateChange = (key) => {
     setTemplateKey(key)
-    setMerchantCode(TEMPLATES_DEFAULTS[key].merchant_code)
+    setMerchantCode(templates[key]?.merchant_code ?? FALLBACK_TEMPLATES[key]?.merchant_code ?? '')
     setFiles([])
     setResult(null)
     setLogLines([])
@@ -96,7 +119,7 @@ export default function App() {
     setFiles(selected)
     setResult(null)
     const names = selected.map(f => f.name).join('、')
-    setLogLines(p => [...p, { msg: `已选择${selected.length}个文件: ${names}`, type: 'info', ts: Date.now() }])
+    setLogLines(p => [...p, { msg: `已选择${selected.length}个文件: ${names}`, type: 'info', id: ++logCounter.current }])
   }, [])
 
   const onDragOver = (e) => { e.preventDefault(); setIsDragOver(true) }
@@ -156,6 +179,8 @@ export default function App() {
     window.open(`${DOWNLOAD_BASE}/${result.filename}`, '_blank')
   }
 
+  if (!template) return <div style={{ padding: 40, textAlign: 'center' }}>加载中...</div>
+
   return (
     <div className="app-root">
       <div className="bg-decoration" aria-hidden="true">
@@ -174,7 +199,7 @@ export default function App() {
           <section className="form-section">
             <label className="section-label"><span className="label-icon">①</span> 选择模板</label>
             <div className="template-grid">
-              {Object.entries(TEMPLATES_DEFAULTS).map(([key, t]) => (
+              {Object.entries(templates).map(([key, t]) => (
                 <button key={key} className={`template-btn ${templateKey === key ? 'active' : ''}`} onClick={() => handleTemplateChange(key)} type="button">
                   <span className="template-btn__check">{templateKey === key && <IconCheck />}</span>
                   <span className="template-btn__info">
@@ -258,7 +283,7 @@ export default function App() {
         {logLines.length > 0 && (
           <div className="log-panel fade-in-up" style={{ animationDelay: '0.15s' }}>
             <div className="log-header"><span>处理日志</span><button className="log-clear" onClick={() => setLogLines([])}>清除</button></div>
-            <div className="log-body">{logLines.map((l) => <div key={l.ts} className={`log-line log-${l.type}`}>{l.msg}</div>)}</div>
+            <div className="log-body">{logLines.map((l) => <div key={l.id} className={`log-line log-${l.type}`}>{l.msg}</div>)}</div>
           </div>
         )}
 

@@ -4,11 +4,13 @@ WMS PDF/Excel 转换工具 - FastAPI 后端
 将PDF/Excel出库单转换为标准OMS出库Excel格式。
 """
 
-import shutil
-import re
 import os
+import re
+import shutil
 import uuid
+import time
 from pathlib import Path
+from datetime import date
 
 import pdfplumber
 import openpyxl
@@ -17,13 +19,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 BASE_DIR = Path(__file__).resolve().parent
-TEMPLATES_DIR = BASE_DIR / "templates"
+# 模板目录：优先查找 backend/templates/（服务器）或 项目根目录的 templates/（本地开发）
+ROOT_TEMPLATES = BASE_DIR.parent.parent / "templates"
+LOCAL_TEMPLATES = BASE_DIR / "templates"
+if ROOT_TEMPLATES.is_dir():
+    TEMPLATES_DIR = ROOT_TEMPLATES
+elif LOCAL_TEMPLATES.is_dir():
+    TEMPLATES_DIR = LOCAL_TEMPLATES
+else:
+    TEMPLATES_DIR = ROOT_TEMPLATES  # fallback, will fail if neither exists
 UPLOADS_DIR = BASE_DIR / "uploads"
 DOWNLOADS_DIR = BASE_DIR / "downloads"
 OMS_TEMPLATE = TEMPLATES_DIR / "OMS出库.xlsx"
 
 UPLOADS_DIR.mkdir(exist_ok=True)
 DOWNLOADS_DIR.mkdir(exist_ok=True)
+
+# 文件限制
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILE_COUNT = 50
+
+# 下载文件保留时间（秒），默认 24 小时
+DOWNLOAD_TTL_SECONDS = 86400
 
 TEMPLATES = {
     "qzz": {
@@ -43,15 +60,26 @@ TEMPLATES = {
     },
 }
 
-app = FastAPI(title="WMS PDF/Excel 转换服务", version="1.0.0")
+app = FastAPI(title="WMS PDF/Excel 转换服务", version="3.1.0")
 
+# 生产环境 CORS：限定来源，credentials 与 wildcard 不能共存
+ALLOWED_ORIGINS = os.environ.get(
+    "WMS_CORS_ORIGINS",
+    "https://www.houpe.top,http://localhost:5173,http://localhost:3000",
+).split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def startup_cleanup():
+    """启动时清理过期下载文件"""
+    cleanup_expired_downloads()
 
 
 @app.get("/api/templates")
@@ -78,6 +106,9 @@ async def convert_file(
     if template_key not in TEMPLATES:
         raise HTTPException(status_code=400, detail=f"未知模板: {template_key}")
 
+    if len(files) > MAX_FILE_COUNT:
+        raise HTTPException(status_code=400, detail=f"文件数量超限，最多 {MAX_FILE_COUNT} 个")
+
     template_cfg = TEMPLATES[template_key]
 
     if not merchant_code:
@@ -98,9 +129,22 @@ async def convert_file(
 
         safe_name = f"{uuid.uuid4().hex}{ext}"
         upload_path = UPLOADS_DIR / safe_name
+
+        # 流式写入，避免整个文件加载到内存
         try:
-            content = await file.read()
-            upload_path.write_bytes(content)
+            total = 0
+            with open(upload_path, "wb") as f:
+                while True:
+                    chunk = await file.read(1024 * 1024)  # 1MB chunks
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > MAX_FILE_SIZE:
+                        os.remove(upload_path)
+                        raise HTTPException(status_code=400, detail=f"文件 '{file.filename}' 超出大小限制 (50MB)")
+                    f.write(chunk)
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"文件保存失败: {str(e)}")
 
@@ -122,6 +166,8 @@ async def convert_file(
             if file_header.get("receiver_org"):
                 header_info = file_header
             parsed_files += 1
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"文件 '{file.filename}' 转换失败: {str(e)}")
         finally:
@@ -131,10 +177,9 @@ async def convert_file(
     if not all_items:
         raise HTTPException(status_code=400, detail="未能解析到任何商品数据")
 
-    from datetime import date
     today = date.today().strftime("%Y%m%d")
     out_name = f"{template_cfg['name']}_{today}"
-    
+
     output_filename = f"{out_name}.xlsx"
     output_path = DOWNLOADS_DIR / output_filename
     counter = 1
@@ -142,7 +187,6 @@ async def convert_file(
         output_filename = f"{out_name}_{counter}.xlsx"
         output_path = DOWNLOADS_DIR / output_filename
         counter += 1
-
 
     oms_template_path = str(OMS_TEMPLATE)
     if not os.path.exists(oms_template_path):
@@ -187,6 +231,22 @@ def download_file(filename: str):
         filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+def cleanup_expired_downloads():
+    """删除超过 TTL 的下载文件"""
+    now = time.time()
+    for f in DOWNLOADS_DIR.iterdir():
+        if f.is_file() and now - f.stat().st_mtime > DOWNLOAD_TTL_SECONDS:
+            f.unlink()
+
+
+@app.get("/api/cleanup")
+def run_cleanup():
+    before = len(list(DOWNLOADS_DIR.iterdir()))
+    cleanup_expired_downloads()
+    after = len(list(DOWNLOADS_DIR.iterdir()))
+    return {"removed": before - after, "remaining": after}
 
 
 def extract_pdf_data(pdf_path):
