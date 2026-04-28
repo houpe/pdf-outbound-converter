@@ -14,17 +14,24 @@
 
 ```
 wms表格转换2/
-├── pdf_to_outbound_gui.py    # GUI主程序 (PySide6)
-├── pdf_to_outbound.py        # CLI版本 (命令行)
-├── OMS出库.xlsx              # Excel输出模板
-├── PDF出库单转换.spec        # macOS打包配置
-├── PDF出库单转换_Windows.spec # Windows打包配置
-├── build_windows.bat         # Windows构建脚本
-├── convert_icon.py           # 图标转换工具
-├── icon.icns                 # macOS应用图标
-├── app_icon.icns             # macOS应用图标 (备用)
-├── icon_source.png           # 图标源文件
-└── app_icon.iconset/         # 图标资源集
+├── src/                        # 源代码
+│   ├── main.py                 # GUI主程序 (PySide6)
+│   ├── cli.py                  # CLI版本 (命令行)
+│   └── convert_icon.py         # 图标转换工具
+├── assets/                     # 图标资源
+│   ├── icon_source.png         # 原始图标
+│   ├── icon.icns               # macOS应用图标
+│   ├── app_icon.icns           # macOS应用图标 (备份)
+│   └── app_icon.iconset/       # 图标资源集
+├── templates/                  # Excel模板
+│   ├── OMS出库.xlsx            # 黔寨寨出库模板
+│   ├── 黎明屯铁锅炖模板.xlsx
+│   └── 欢乐牧场模板.xlsx
+├── PDF出库单转换.spec          # macOS打包配置
+├── PDF出库单转换_Windows.spec  # Windows打包配置
+├── build_windows.bat           # Windows构建脚本
+├── requirements.txt
+└── README.md
 ```
 
 ## 环境要求
@@ -46,7 +53,7 @@ pip install pyside6 pdfplumber openpyxl pyinstaller pillow
 ### GUI版本
 
 ```bash
-python pdf_to_outbound_gui.py
+python src/main.py
 ```
 
 操作步骤:
@@ -59,7 +66,7 @@ python pdf_to_outbound_gui.py
 ### CLI版本
 
 ```bash
-python pdf_to_outbound.py [PDF路径] [输出路径]
+python src/cli.py [PDF路径] [输出路径]
 ```
 
 运行后会提示输入商户编码，然后自动完成转换。
@@ -70,7 +77,7 @@ python pdf_to_outbound.py [PDF路径] [输出路径]
 
 ```bash
 # 生成图标资源
-iconutil -c icns app_icon.iconset
+iconutil -c icns assets/app_icon.iconset
 
 # 打包
 pyinstaller --clean PDF出库单转换.spec

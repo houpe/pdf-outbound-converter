@@ -279,9 +279,9 @@ class HeaderWidget(QWidget):
 
 
 TEMPLATES = {
-    'qzz': 'OMS出库.xlsx',
-    'lmt': '黎明屯铁锅炖模板.xlsx',
-    'hlmc': '欢乐牧场模板.xlsx',
+    'qzz': os.path.join('templates', 'OMS出库.xlsx'),
+    'lmt': os.path.join('templates', '黎明屯铁锅炖模板.xlsx'),
+    'hlmc': os.path.join('templates', '欢乐牧场模板.xlsx'),
 }
 
 TEMPLATE_NAMES = {
@@ -311,26 +311,19 @@ class ConversionWorker(QThread):
                 header_info, items = parse_lmt_excel(self.pdf_path)
             elif self.template_key == 'hlmc':
                 self.log.emit(f"  正在读取Excel: {self.pdf_path}")
-                header_info, shops = parse_hlmc_excel(self.pdf_path)
-                
-                self.log.emit("\n  ◆ 提取的头部信息:")
-                self.log.emit(f"    店铺数量: {len(shops)}")
-                
-                output_dir = os.path.dirname(self.output_path) or '.'
-                output_files = []
-                
-                for shop_name, items in shops.items():
-                    self.log.emit(f"\n  ◆ {shop_name} 商品明细 ({len(items)}条):")
-                    for item in items:
-                        self.log.emit(f"    {item['item_code']} - {item['item_name']} x {item['quantity']} {item['unit']}")
-                    
-                    shop_output = os.path.join(output_dir, f"{shop_name}_OMS出库.xlsx")
-                    create_excel_hlmc(header_info, items, self.template_path, shop_output)
-                    output_files.append(shop_output)
-                    self.log.emit(f"\n  ◆ {shop_name} 输出文件:")
-                    self.log.emit(f"    {shop_output}")
-                
-                self.finished.emit(True, ';'.join(output_files))
+                header_info, items = parse_hlmc_excel(self.pdf_path)
+
+                self.log.emit("\n  ◆ 商品明细 (共 {} 条):".format(len(items)))
+                for item in items:
+                    self.log.emit(f"    {item['item_code']} - {item['item_name']} x {item['quantity']} {item['unit']} [{item['receiver_org']}]")
+
+                self.log.emit("\n  ⚙ 正在生成Excel...")
+                create_excel(header_info, items, self.template_path, self.output_path, self.merchant_code, self.template_key)
+
+                self.log.emit(f"\n  ◆ 输出文件:")
+                self.log.emit(f"    {self.output_path}")
+                self.log.emit(f"\n  💡 共处理 {len(items)} 条记录")
+                self.finished.emit(True, self.output_path)
             else:
                 self.log.emit(f"  正在读取PDF: {self.pdf_path}")
                 header_info, items = extract_pdf_data(self.pdf_path)
@@ -635,25 +628,25 @@ def parse_hlmc_excel(excel_path):
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     ws = wb.active
     all_records = []
-    
+
     header_row = ws[1]
     col_unit = 5  # Column E (1-indexed)
     col_surplus = 11  # Column K (1-indexed)
-    
+
     # Find 店铺列 (between 单位 and 下单后结余)
     shop_cols = {}
     for c in range(col_unit + 1, col_surplus):
         shop_name = str(header_row[c-1].value or '').strip()
         if shop_name:
             shop_cols[c] = shop_name
-    
+
     # Parse product rows starting from row 2
     r = 2
     while r <= ws.max_row:
         item_code = ws.cell(row=r, column=1).value
         item_name = ws.cell(row=r, column=2).value
         unit = str(ws.cell(row=r, column=col_unit).value or '').strip()
-        
+
         for col_idx, shop_name in shop_cols.items():
             qty = ws.cell(row=r, column=col_idx).value
             if qty is not None:
@@ -679,7 +672,7 @@ def parse_hlmc_excel(excel_path):
                         'order_date': '',
                     })
         r += 1
-    
+
     info = {
         'order_no': '',
         'receiver_org': '',
@@ -689,15 +682,7 @@ def parse_hlmc_excel(excel_path):
         'receiver_address': '',
         'order_date': '',
     }
-    # Group by shop
-    shops = {}
-    for rec in all_records:
-        shop = rec['receiver_org']
-        if shop not in shops:
-            shops[shop] = []
-        shops[shop].append(rec)
-    
-    return info, shops
+    return info, all_records
 
 
 def parse_header(text):
@@ -742,8 +727,9 @@ def parse_items(tables):
     return items
 
 
-def create_excel_qzz(header_info, items, ws, merchant_code=''):
-    receiver_info = f"{header_info.get('receiver_name', '')},{header_info.get('receiver_phone', '')},{header_info.get('receiver_address', '')}"
+def create_excel(header_info, items, template_path, output_path, merchant_code='', template_key='qzz'):
+    wb = openpyxl.load_workbook(template_path)
+    ws = wb.active
     for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=10):
         for cell in row:
             cell.value = None
@@ -752,45 +738,12 @@ def create_excel_qzz(header_info, items, ws, merchant_code=''):
         ws.cell(row=i, column=2, value=merchant_code)
         ws.cell(row=i, column=3, value=header_info.get('supplier_org', ''))
         ws.cell(row=i, column=4, value='')
-        ws.cell(row=i, column=5, value=receiver_info)
-        ws.cell(row=i, column=6, value=item['item_code'])
-        ws.cell(row=i, column=7, value='')
-        ws.cell(row=i, column=8, value=int(item['quantity']) if item['quantity'].isdigit() else item['quantity'])
-        ws.cell(row=i, column=9, value=header_info.get('receiver_org', ''))
-        ws.cell(row=i, column=10, value=item['item_name'])
-
-
-def create_excel_lmt(header_info, items, ws, merchant_code=''):
-    create_excel_qzz(header_info, items, ws, merchant_code)
-
-
-def create_excel_hlmc(header_info, items, template_path, output_path):
-    wb = openpyxl.load_workbook(template_path)
-    ws = wb.active
-    for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=10):
-        for cell in row:
-            cell.value = None
-    for i, item in enumerate(items, start=3):
-        ws.cell(row=i, column=1, value=header_info.get('order_no', ''))
-        ws.cell(row=i, column=2, value='')
-        ws.cell(row=i, column=3, value=header_info.get('supplier_org', ''))
-        ws.cell(row=i, column=4, value='')
         ws.cell(row=i, column=5, value=f"{header_info.get('receiver_name', '')},{header_info.get('receiver_phone', '')},{header_info.get('receiver_address', '')}")
         ws.cell(row=i, column=6, value=item['item_code'])
         ws.cell(row=i, column=7, value='')
         ws.cell(row=i, column=8, value=int(item['quantity']) if str(item['quantity']).isdigit() else item['quantity'])
-        ws.cell(row=i, column=9, value=item['receiver_org'])
+        ws.cell(row=i, column=9, value=item.get('receiver_org', header_info.get('receiver_org', '')))
         ws.cell(row=i, column=10, value=item['item_name'])
-    wb.save(output_path)
-
-
-def create_excel(header_info, items, template_path, output_path, merchant_code='', template_key='qzz'):
-    wb = openpyxl.load_workbook(template_path)
-    ws = wb.active
-    for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=10):
-        for cell in row:
-            cell.value = None
-    create_excel_qzz(header_info, items, ws, merchant_code)
     wb.save(output_path)
 
 
@@ -801,10 +754,14 @@ def main():
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     icon_path = None
-    for ext in ['ico', 'icns', 'png']:
-        candidate = os.path.join(base_dir, f'app_icon.{ext}')
-        if os.path.exists(candidate):
-            icon_path = candidate
+    icon_dirs = [os.path.join(base_dir, 'assets'), base_dir]
+    for icon_dir in icon_dirs:
+        for ext in ['ico', 'icns', 'png']:
+            candidate = os.path.join(icon_dir, f'app_icon.{ext}')
+            if os.path.exists(candidate):
+                icon_path = candidate
+                break
+        if icon_path:
             break
     if icon_path:
         app.setWindowIcon(QIcon(icon_path))
