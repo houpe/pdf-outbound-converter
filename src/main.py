@@ -318,7 +318,9 @@ class ConversionWorker(QThread):
                     self.log.emit(f"    {item['item_code']} - {item['item_name']} x {item['quantity']} {item['unit']} [{item['receiver_org']}]")
 
                 self.log.emit("\n  ⚙ 正在生成Excel...")
-                create_excel(header_info, items, self.template_path, self.output_path, self.merchant_code, self.template_key)
+                # Use OMS出库.xlsx template for output, not the HLMC input template
+                oms_template = resource_path(TEMPLATES['qzz'])
+                create_excel(header_info, items, oms_template, self.output_path, self.merchant_code, self.template_key)
 
                 self.log.emit(f"\n  ◆ 输出文件:")
                 self.log.emit(f"    {self.output_path}")
