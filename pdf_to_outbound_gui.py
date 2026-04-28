@@ -311,32 +311,51 @@ class ConversionWorker(QThread):
                 header_info, items = parse_lmt_excel(self.pdf_path)
             elif self.template_key == 'hlmc':
                 self.log.emit(f"  正在读取Excel: {self.pdf_path}")
-                header_info, items = parse_hlmc_excel(self.pdf_path)
+                header_info, shops = parse_hlmc_excel(self.pdf_path)
+                
+                self.log.emit("\n  ◆ 提取的头部信息:")
+                self.log.emit(f"    店铺数量: {len(shops)}")
+                
+                output_dir = os.path.dirname(self.output_path) or '.'
+                output_files = []
+                
+                for shop_name, items in shops.items():
+                    self.log.emit(f"\n  ◆ {shop_name} 商品明细 ({len(items)}条):")
+                    for item in items:
+                        self.log.emit(f"    {item['item_code']} - {item['item_name']} x {item['quantity']} {item['unit']}")
+                    
+                    shop_output = os.path.join(output_dir, f"{shop_name}_OMS出库.xlsx")
+                    create_excel_hlmc(header_info, items, self.template_path, shop_output)
+                    output_files.append(shop_output)
+                    self.log.emit(f"\n  ◆ {shop_name} 输出文件:")
+                    self.log.emit(f"    {shop_output}")
+                
+                self.finished.emit(True, ';'.join(output_files))
             else:
                 self.log.emit(f"  正在读取PDF: {self.pdf_path}")
                 header_info, items = extract_pdf_data(self.pdf_path)
 
-            self.log.emit("\n  ◆ 提取的头部信息:")
-            labels = {
-                'order_no': '单据编号', 'receiver_org': '收货机构',
-                'supplier_org': '供货机构', 'receiver_name': '收货人',
-                'receiver_phone': '收货电话', 'receiver_address': '收货地址',
-                'order_date': '订单日期'
-            }
-            for key, value in header_info.items():
-                self.log.emit(f"    {labels.get(key, key)}: {value}")
+                self.log.emit("\n  ◆ 提取的头部信息:")
+                labels = {
+                    'order_no': '单据编号', 'receiver_org': '收货机构',
+                    'supplier_org': '供货机构', 'receiver_name': '收货人',
+                    'receiver_phone': '收货电话', 'receiver_address': '收货地址',
+                    'order_date': '订单日期'
+                }
+                for key, value in header_info.items():
+                    self.log.emit(f"    {labels.get(key, key)}: {value}")
 
-            self.log.emit(f"\n  ◆ 商品明细 ({len(items)}条):")
-            for item in items:
-                self.log.emit(f"    {item['item_code']} - {item['item_name']} x {item['quantity']} {item['unit']}")
+                self.log.emit(f"\n  ◆ 商品明细 ({len(items)}条):")
+                for item in items:
+                    self.log.emit(f"    {item['item_code']} - {item['item_name']} x {item['quantity']} {item['unit']}")
 
-            self.log.emit("\n  ⚙ 正在生成Excel...")
-            create_excel(header_info, items, self.template_path, self.output_path, self.merchant_code, self.template_key)
+                self.log.emit("\n  ⚙ 正在生成Excel...")
+                create_excel(header_info, items, self.template_path, self.output_path, self.merchant_code, self.template_key)
 
-            self.log.emit(f"\n  ◆ 输出文件:")
-            self.log.emit(f"    {self.output_path}")
-            self.log.emit(f"\n  💡 共处理 {len(items)} 条记录")
-            self.finished.emit(True, self.output_path)
+                self.log.emit(f"\n  ◆ 输出文件:")
+                self.log.emit(f"    {self.output_path}")
+                self.log.emit(f"\n  💡 共处理 {len(items)} 条记录")
+                self.finished.emit(True, self.output_path)
         except Exception as e:
             self.log.emit(f"\n  ✗ 错误: {str(e)}")
             self.finished.emit(False, str(e))
@@ -549,8 +568,16 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         self.convert_btn.setEnabled(True)
         if success:
-            self.append_log("  ✓ 转换完成!", path=message)
-            QMessageBox.information(self, "成功", f"转换完成!\n输出文件: {message}\n\n点击日志中的路径可直接打开文件")
+            output_files = [f.strip() for f in message.split(';') if f.strip()]
+            if len(output_files) > 1:
+                files_display = '\n'.join(f"  {f}" for f in output_files)
+                self.append_log(f"  ✓ 转换完成! 共生成 {len(output_files)} 个文件")
+                for fp in output_files:
+                    self.append_log(f"    {fp}", path=fp)
+                QMessageBox.information(self, "成功", f"转换完成! 共生成 {len(output_files)} 个文件:\n\n{files_display}\n\n点击日志中的路径可直接打开文件")
+            else:
+                self.append_log("  ✓ 转换完成!", path=message)
+                QMessageBox.information(self, "成功", f"转换完成!\n输出文件: {message}\n\n点击日志中的路径可直接打开文件")
         else:
             self.append_log(f"  ✗ 错误: {message}")
             QMessageBox.critical(self, "错误", message)
@@ -629,23 +656,28 @@ def parse_hlmc_excel(excel_path):
         
         for col_idx, shop_name in shop_cols.items():
             qty = ws.cell(row=r, column=col_idx).value
-            if qty and float(qty) > 0:
-                all_records.append({
-                    'item_code': str(item_code or '').strip(),
-                    'item_name': str(item_name or '').strip(),
-                    'quantity': str(int(float(qty))),
-                    'unit': unit,
-                    'spec': '',
-                    'category': '',
-                    'remark': '',
-                    'receiver_org': shop_name,
-                    'receiver_name': '',
-                    'receiver_phone': '',
-                    'receiver_address': '',
-                    'order_no': '',
-                    'supplier_org': '',
-                    'order_date': '',
-                })
+            if qty is not None:
+                try:
+                    qty_val = float(qty)
+                except (ValueError, TypeError):
+                    qty_val = 0
+                if qty_val > 0:
+                    all_records.append({
+                        'item_code': str(item_code or '').strip(),
+                        'item_name': str(item_name or '').strip(),
+                        'quantity': str(int(float(qty))),
+                        'unit': unit,
+                        'spec': '',
+                        'category': '',
+                        'remark': '',
+                        'receiver_org': shop_name,
+                        'receiver_name': '',
+                        'receiver_phone': '',
+                        'receiver_address': '',
+                        'order_no': '',
+                        'supplier_org': '',
+                        'order_date': '',
+                    })
         r += 1
     
     info = {
@@ -657,7 +689,15 @@ def parse_hlmc_excel(excel_path):
         'receiver_address': '',
         'order_date': '',
     }
-    return info, all_records
+    # Group by shop
+    shops = {}
+    for rec in all_records:
+        shop = rec['receiver_org']
+        if shop not in shops:
+            shops[shop] = []
+        shops[shop].append(rec)
+    
+    return info, shops
 
 
 def parse_header(text):
@@ -722,6 +762,26 @@ def create_excel_qzz(header_info, items, ws, merchant_code=''):
 
 def create_excel_lmt(header_info, items, ws, merchant_code=''):
     create_excel_qzz(header_info, items, ws, merchant_code)
+
+
+def create_excel_hlmc(header_info, items, template_path, output_path):
+    wb = openpyxl.load_workbook(template_path)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=10):
+        for cell in row:
+            cell.value = None
+    for i, item in enumerate(items, start=3):
+        ws.cell(row=i, column=1, value=header_info.get('order_no', ''))
+        ws.cell(row=i, column=2, value='')
+        ws.cell(row=i, column=3, value=header_info.get('supplier_org', ''))
+        ws.cell(row=i, column=4, value='')
+        ws.cell(row=i, column=5, value=f"{header_info.get('receiver_name', '')},{header_info.get('receiver_phone', '')},{header_info.get('receiver_address', '')}")
+        ws.cell(row=i, column=6, value=item['item_code'])
+        ws.cell(row=i, column=7, value='')
+        ws.cell(row=i, column=8, value=int(item['quantity']) if str(item['quantity']).isdigit() else item['quantity'])
+        ws.cell(row=i, column=9, value=item['receiver_org'])
+        ws.cell(row=i, column=10, value=item['item_name'])
+    wb.save(output_path)
 
 
 def create_excel(header_info, items, template_path, output_path, merchant_code='', template_key='qzz'):
