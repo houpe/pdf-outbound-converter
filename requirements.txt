@@ -1,9 +1,12 @@
-# WMS PDF/Excel 转换工具 依赖 (Web端)
+# WMS 出库单转换工具 - Python 依赖
+# 安装：pip install -r requirements.txt
 
 # Web框架
 fastapi>=0.115.0
 uvicorn>=0.30.6
 gunicorn>=22.0.0
+
+# 文件上传
 python-multipart>=0.0.9
 
 # PDF解析
@@ -11,4 +14,6 @@ pdfplumber>=0.7.0
 
 # Excel处理
 openpyxl>=3.1.0
+
+# 图片处理（pdfplumber 依赖）
 pillow>=9.0.0

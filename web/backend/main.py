@@ -9,6 +9,7 @@ import re
 import shutil
 import uuid
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import date
 
@@ -42,6 +43,24 @@ MAX_FILE_COUNT = 50
 # 下载文件保留时间（秒），默认 24 小时
 DOWNLOAD_TTL_SECONDS = 86400
 
+
+def cleanup_expired_downloads():
+    """删除超过 TTL 的下载文件"""
+    now = time.time()
+    for f in DOWNLOADS_DIR.iterdir():
+        if f.is_file() and now - f.stat().st_mtime > DOWNLOAD_TTL_SECONDS:
+            f.unlink()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动时清理过期下载文件"""
+    cleanup_expired_downloads()
+    yield
+
+
+app = FastAPI(title="WMS PDF/Excel 转换服务", version="3.2.0", lifespan=lifespan)
+
 TEMPLATES = {
     "qzz": {
         "name": "黔寨寨贵州烙锅",
@@ -74,12 +93,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def startup_cleanup():
-    """启动时清理过期下载文件"""
-    cleanup_expired_downloads()
 
 
 @app.get("/api/templates")
@@ -223,30 +236,18 @@ async def convert_file(
 
 @app.get("/downloads/{filename}")
 def download_file(filename: str):
-    filepath = DOWNLOADS_DIR / filename
+    # 防止路径遍历攻击
+    safe = Path(filename).name
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="非法文件名")
+    filepath = DOWNLOADS_DIR / safe
     if not filepath.exists() or not filepath.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
     return FileResponse(
         path=str(filepath),
-        filename=filename,
+        filename=safe,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-
-
-def cleanup_expired_downloads():
-    """删除超过 TTL 的下载文件"""
-    now = time.time()
-    for f in DOWNLOADS_DIR.iterdir():
-        if f.is_file() and now - f.stat().st_mtime > DOWNLOAD_TTL_SECONDS:
-            f.unlink()
-
-
-@app.get("/api/cleanup")
-def run_cleanup():
-    before = len(list(DOWNLOADS_DIR.iterdir()))
-    cleanup_expired_downloads()
-    after = len(list(DOWNLOADS_DIR.iterdir()))
-    return {"removed": before - after, "remaining": after}
 
 
 def extract_pdf_data(pdf_path):

@@ -79,32 +79,34 @@ npm run dev
 
 ### 一键部署脚本
 
-从本地执行（推荐，已测试通过）：
+从项目根目录执行：
 
 ```bash
 # 1. 构建前端
 cd web/frontend && npm run build
 
-# 2. 部署
-ssh root@www.houpe.top << 'DEPLOY'
-# 更新前端
-rm -rf /www/wwwroot/address-weight-calc/wms/assets /www/wwwroot/address-weight-calc/wms/index.html
-DEPLOY
-
+# 2. 部署到服务器
 scp -r ./dist/* root@www.houpe.top:/www/wwwroot/address-weight-calc/wms/
-scp ./web/backend/main.py root@www.houpe.top:/www/wwwroot/wms-api/main.py
+scp ../../web/backend/main.py root@www.houpe.top:/www/wwwroot/wms-api/main.py
 
 ssh root@www.houpe.top << 'RESTART'
-cp /root/wms-转换2/templates/*.xlsx /www/wwwroot/wms-api/ 2>/dev/null || echo "skip templates"
 cd /www/wwwroot/wms-api && pm2 restart wms-api
 echo "✅ 部署完成"
 RESTART
 ```
 
-### 完整一键脚本（单条命令）
+回到项目根目录：
 
 ```bash
-cd web/frontend && npm run build && scp -r dist/* root@www.houpe.top:/www/wwwroot/address-weight-calc/wms/ && scp web/backend/main.py root@www.houpe.top:/www/wwwroot/wms-api/main.py && ssh root@www.houpe.top 'cd /www/wwwroot/wms-api && pm2 restart wms-api && echo ✅ done' && git add . && git commit -m "update" && git push origin main
+cd ../..
+```
+
+### 快捷部署（单条命令）
+
+从项目 `web/frontend` 目录执行：
+
+```bash
+npm run build && scp -r dist/* root@www.houpe.top:/www/wwwroot/address-weight-calc/wms/ && scp ../../web/backend/main.py root@www.houpe.top:/www/wwwroot/wms-api/main.py && ssh root@www.houpe.top 'cd /www/wwwroot/wms-api && pm2 restart wms-api && echo ✅ done'
 ```
 
 ### nginx 配置参考（已在 address-weight.conf 中）
@@ -151,6 +153,8 @@ location /wms/downloads/ {
 
 ## 版本历史
 
+- v3.2 - 安全加固：路径遍历防护、lifespan 替换废弃 API、清理端点移除、requirements 合并
+- v3.1 - 后端优化：CORS 限定来源、动态模板获取、流式上传、TTL 清理、文件限制
 - v3.0 - 重构为Web应用（FastAPI + React），删除桌面端代码
 - v2.3 - 重构项目目录 (src/assets/templates)，欢乐牧场合并输出
 - v2.2 - 新增欢乐牧场模板
