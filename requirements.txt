@@ -1,16 +1,14 @@
-# PDF出库单转Excel工具 依赖
+# WMS PDF/Excel 转换工具 依赖 (Web端)
 
-# GUI框架
-PySide6>=6.4.0
+# Web框架
+fastapi>=0.115.0
+uvicorn>=0.30.6
+gunicorn>=22.0.0
+python-multipart>=0.0.9
 
 # PDF解析
 pdfplumber>=0.7.0
 
 # Excel处理
 openpyxl>=3.1.0
-
-# 图标处理
-Pillow>=9.0.0
-
-# 打包工具 (可选，用于发布)
-pyinstaller>=5.0.0
+pillow>=9.0.0
