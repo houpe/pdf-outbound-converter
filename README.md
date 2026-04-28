@@ -70,94 +70,66 @@ npm run dev
 
 ## 部署（服务器）
 
-### 环境要求
+### 服务器环境
 
-- Python 3.10+
-- Node.js 18+
-- nginx
-- PM2
-
-### 部署步骤
-
-#### 1. SSH 登录服务器同步代码
-
-```bash
-ssh root@www.houpe.top
-cd /var/www/wms
-git pull origin main
-```
-
-#### 2. 安装后端依赖
-
-```bash
-cd /var/www/wms/web/backend
-pip install -r requirements.txt
-cp ../../templates/*.xlsx .
-mkdir -p uploads downloads
-```
-
-#### 3. 构建前端
-
-```bash
-cd /var/www/wms/web/frontend
-npm install
-npm run build
-```
-
-#### 4. 配置 nginx
-
-```nginx
-server {
-    listen 80;
-    server_name www.houpe.top;
-
-    location /wms/ {
-        alias /var/www/wms/web/frontend/dist/;
-        try_files $uri $uri/ /wms/index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    location /downloads/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-    }
-}
-```
-
-```bash
-systemctl reload nginx
-```
-
-#### 5. 启动/重启后端（PM2）
-
-```bash
-cd /var/www/wms/web/backend
-pm2 restart wms-backend || pm2 start "gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 127.0.0.1:8000" --name wms-backend
-```
+- 访问地址：`https://www.houpe.top/wms/`
+- 后端路径：`/www/wwwroot/wms-api/main.py`（端口 8000，PM2 `wms-api`）
+- 前端路径：`/www/wwwroot/address-weight-calc/wms/`
+- nginx 配置：宝塔面板 `address-weight.conf`
 
 ### 一键部署脚本
 
-从本地执行：
+从本地执行（推荐，已测试通过）：
 
 ```bash
-ssh root@www.houpe.top << 'EOF'
-cd /var/www/wms
-git pull
-cd web/backend
-pip install -r requirements.txt -q
-cp ../../templates/*.xlsx .
-cd ../frontend
-npm install
-npm run build
-pm2 restart wms-backend
-systemctl reload nginx
+# 1. 构建前端
+cd web/frontend && npm run build
+
+# 2. 部署
+ssh root@www.houpe.top << 'DEPLOY'
+# 更新前端
+rm -rf /www/wwwroot/address-weight-calc/wms/assets /www/wwwroot/address-weight-calc/wms/index.html
+DEPLOY
+
+scp -r ./dist/* root@www.houpe.top:/www/wwwroot/address-weight-calc/wms/
+scp ./web/backend/main.py root@www.houpe.top:/www/wwwroot/wms-api/main.py
+
+ssh root@www.houpe.top << 'RESTART'
+cp /root/wms-转换2/templates/*.xlsx /www/wwwroot/wms-api/ 2>/dev/null || echo "skip templates"
+cd /www/wwwroot/wms-api && pm2 restart wms-api
 echo "✅ 部署完成"
-EOF
+RESTART
+```
+
+### 完整一键脚本（单条命令）
+
+```bash
+cd web/frontend && npm run build && scp -r dist/* root@www.houpe.top:/www/wwwroot/address-weight-calc/wms/ && scp web/backend/main.py root@www.houpe.top:/www/wwwroot/wms-api/main.py && ssh root@www.houpe.top 'cd /www/wwwroot/wms-api && pm2 restart wms-api && echo ✅ done' && git add . && git commit -m "update" && git push origin main
+```
+
+### nginx 配置参考（已在 address-weight.conf 中）
+
+```nginx
+# WMS 前端 - /www/wwwroot/address-weight-calc/wms/
+location = /wms { rewrite ^/wms$ /wms/ permanent; }
+location /wms/ {
+    alias /www/wwwroot/address-weight-calc/wms/;
+    try_files $uri $uri/ /wms/index.html;
+}
+
+# WMS API 反向代理 - 后端端口 8000
+location /wms/api/ {
+    proxy_pass http://127.0.0.1:8000/api/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    client_max_body_size 50m;
+}
+
+# WMS 下载文件代理
+location /wms/downloads/ {
+    proxy_pass http://127.0.0.1:8000/downloads/;
+    proxy_set_header Host $host;
+}
 ```
 
 ## 输出格式
