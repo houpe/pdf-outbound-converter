@@ -24,16 +24,27 @@ BASE_DIR = Path(__file__).resolve().parent
 # 模板目录：优先查找 backend/templates/（服务器）或 项目根目录的 templates/（本地开发）
 ROOT_TEMPLATES = BASE_DIR.parent.parent / "templates"
 LOCAL_TEMPLATES = BASE_DIR / "templates"
-if ROOT_TEMPLATES.is_dir():
-    TEMPLATES_DIR = ROOT_TEMPLATES
-elif LOCAL_TEMPLATES.is_dir():
+if LOCAL_TEMPLATES.is_dir():
     TEMPLATES_DIR = LOCAL_TEMPLATES
+elif ROOT_TEMPLATES.is_dir():
+    TEMPLATES_DIR = ROOT_TEMPLATES
 else:
     TEMPLATES_DIR = ROOT_TEMPLATES  # fallback, will fail if neither exists
 UPLOADS_DIR = BASE_DIR / "uploads"
 DOWNLOADS_DIR = BASE_DIR / "downloads"
-OMS_TEMPLATE = TEMPLATES_DIR / "OMS出库.xlsx"
-SPLIT_TEMPLATE = TEMPLATES_DIR / "商品拆零模板.xlsx"
+
+def _find_template(filename: str) -> Path:
+    """查找模板文件：优先 templates/ 子目录，回退到 BASE_DIR 同级目录"""
+    in_templates = TEMPLATES_DIR / filename
+    if in_templates.exists():
+        return in_templates
+    in_base = BASE_DIR / filename
+    if in_base.exists():
+        return in_base
+    return in_templates  # fallback to original path, will fail if not found
+
+OMS_TEMPLATE = _find_template("OMS出库.xlsx")
+SPLIT_TEMPLATE = _find_template("商品拆零模板.xlsx")
 
 UPLOADS_DIR.mkdir(exist_ok=True)
 DOWNLOADS_DIR.mkdir(exist_ok=True)
@@ -415,8 +426,6 @@ def parse_lmt_excel(excel_path, filename=""):
         if val and val != "订货机构":
             info["receiver_org"] = val
             break
-    if shop_name:
-        info["receiver_org"] = shop_name
 
     cells = search_all_cols(ws, "供货机构")
     info["supplier_org"] = ""
