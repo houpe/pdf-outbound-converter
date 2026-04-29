@@ -7,9 +7,9 @@ const DOWNLOAD_BASE = import.meta.env.PROD ? '/wms/downloads' : '/downloads'
 
 // Fallback used only during initial load / network error
 const FALLBACK_TEMPLATES = {
-  qzz:  { name: '黔寨寨贵州烙锅', accept: '.pdf',        merchant_code: 'Q20260427013' },
-  lmt:  { name: '黎明屯铁锅炖',   accept: '.xlsx,.xls', merchant_code: 'Q20260427017' },
-  hlmc: { name: '欢乐牧场',       accept: '.xlsx,.xls', merchant_code: 'Q20260427015' },
+  qzz:  { name: '黔寨寨贵州烙锅', accept: '.pdf' },
+  lmt:  { name: '黎明屯铁锅炖',   accept: '.xlsx,.xls' },
+  hlmc: { name: '欢乐牧场',       accept: '.xlsx,.xls' },
 }
 
 const getAcceptExts = (accept) => accept.split(',').map(s => s.trim())
@@ -62,7 +62,6 @@ function IconSparkle() {
 export default function App() {
   const [templates, setTemplates] = useState(FALLBACK_TEMPLATES)
   const [templateKey, setTemplateKey] = useState('qzz')
-  const [merchantCode, setMerchantCode] = useState(FALLBACK_TEMPLATES.qzz.merchant_code)
   const [files, setFiles] = useState([])
   const [progress, setProgress] = useState(null)
   const [result, setResult] = useState(null)
@@ -77,15 +76,11 @@ export default function App() {
       .then(res => {
         const map = {}
         for (const t of res.data.templates) {
-          map[t.key] = { name: t.name, accept: t.accept, merchant_code: t.default_merchant_code }
+          map[t.key] = { name: t.name, accept: t.accept }
         }
         setTemplates(map)
-        // Sync current selection
         const firstKey = res.data.templates[0]?.key
-        if (firstKey) {
-          setTemplateKey(firstKey)
-          setMerchantCode(map[firstKey].merchant_code)
-        }
+        if (firstKey) setTemplateKey(firstKey)
       })
       .catch(() => setLogLines([{ msg: '⚠️ 无法获取模板列表，使用本地缓存', type: 'warn', id: Date.now() }]))
   }, [])
@@ -100,7 +95,6 @@ export default function App() {
 
   const handleTemplateChange = (key) => {
     setTemplateKey(key)
-    setMerchantCode(templates[key]?.merchant_code ?? FALLBACK_TEMPLATES[key]?.merchant_code ?? '')
     setFiles([])
     setResult(null)
     setLogLines([])
@@ -212,12 +206,7 @@ export default function App() {
           </section>
 
           <section className="form-section">
-            <label className="section-label" htmlFor="merchant-input"><span className="label-icon">②</span> 商户编码</label>
-            <input id="merchant-input" type="text" className="text-input merchant-input" value={merchantCode} onChange={(e) => setMerchantCode(e.target.value)} placeholder="请输入商户编码" />
-          </section>
-
-          <section className="form-section">
-            <label className="section-label"><span className="label-icon">③</span> 上传文件</label>
+            <label className="section-label"><span className="label-icon">②</span> 上传文件</label>
             <div className={`upload-zone ${isDragOver ? 'drag-over' : ''} ${files.length ? 'has-files' : ''}`} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop} onClick={() => fileInputRef.current?.click()} role="button" tabIndex={0}>
               <input ref={fileInputRef} type="file" accept={template.accept} multiple onChange={(e) => onFilePick(e.target.files)} hidden />
               {files.length ? (
