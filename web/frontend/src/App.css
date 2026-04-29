@@ -106,9 +106,9 @@
 .label-icon {
   background: var(--primary);
   color: #fff;
-  font-size: 11px;
+  font-size: 22px;
   font-weight: 700;
-  width: 22px; height: 22px;
+  width: 44px; height: 44px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
