@@ -21,6 +21,7 @@ import openpyxl
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).resolve().parent
 # 模板目录：优先查找 backend/templates/（服务器）或 项目根目录的 templates/（本地开发）
@@ -350,6 +351,80 @@ def get_logs(limit: int = 200):
                 continue
     entries.reverse()
     return {"logs": entries[:limit], "total": len(entries)}
+
+
+class SplitCodeCreate(BaseModel):
+    code: str
+    split: str
+
+
+@app.get("/api/split-codes")
+def list_split_codes():
+    if not SPLIT_TEMPLATE.exists():
+        return {"codes": [], "total": 0}
+    codes = []
+    try:
+        wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE), read_only=True, data_only=True)
+        ws = wb.active
+        for r in range(2, (ws.max_row or 1) + 1):
+            code = ws.cell(row=r, column=1).value
+            flag = ws.cell(row=r, column=2).value
+            if code:
+                codes.append({"code": str(code).strip(), "split": str(flag or "").strip()})
+        wb.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取拆零模板失败: {str(e)}")
+    return {"codes": codes, "total": len(codes)}
+
+
+@app.post("/api/split-codes")
+def create_split_code(input: SplitCodeCreate):
+    if input.split not in ("是", "否"):
+        raise HTTPException(status_code=400, detail="拆零值必须为「是」或「否」")
+    if not input.code.strip():
+        raise HTTPException(status_code=400, detail="商品编码不能为空")
+    if not SPLIT_TEMPLATE.exists():
+        raise HTTPException(status_code=500, detail="拆零模板文件不存在")
+
+    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
+    ws = wb.active
+    for r in range(2, (ws.max_row or 1) + 1):
+        existing = ws.cell(row=r, column=1).value
+        if existing and str(existing).strip() == input.code.strip():
+            wb.close()
+            raise HTTPException(status_code=409, detail=f"商品编码 {input.code} 已存在")
+    wb.save(str(SPLIT_TEMPLATE))
+    wb.close()
+
+    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
+    ws = wb.active
+    next_row = (ws.max_row or 1) + 1
+    ws.cell(row=next_row, column=1, value=input.code.strip())
+    ws.cell(row=next_row, column=2, value=input.split)
+    wb.save(str(SPLIT_TEMPLATE))
+    wb.close()
+    return {"success": True, "code": input.code.strip(), "split": input.split}
+
+
+@app.delete("/api/split-codes/{code:path}")
+def delete_split_code(code: str):
+    if not SPLIT_TEMPLATE.exists():
+        raise HTTPException(status_code=500, detail="拆零模板文件不存在")
+    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
+    ws = wb.active
+    deleted = False
+    for r in range(2, (ws.max_row or 1) + 1):
+        existing = ws.cell(row=r, column=1).value
+        if existing and str(existing).strip() == code.strip():
+            ws.delete_rows(r, 1)
+            deleted = True
+            break
+    if not deleted:
+        wb.close()
+        raise HTTPException(status_code=404, detail=f"商品编码 {code} 未找到")
+    wb.save(str(SPLIT_TEMPLATE))
+    wb.close()
+    return {"success": True, "deleted": code.strip()}
 
 
 @app.get("/downloads/{filename}")

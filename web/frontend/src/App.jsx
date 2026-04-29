@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import axios from 'axios'
 import './App.css'
+import SplitManager from './SplitManager'
 
 const API_BASE = import.meta.env.PROD ? '/wms/api' : '/api'
 const DOWNLOAD_BASE = import.meta.env.PROD ? '/wms/downloads' : '/downloads'
@@ -60,6 +61,7 @@ function IconSparkle() {
 }
 
 export default function App() {
+  const [view, setView] = useState('convert')
   const [templates, setTemplates] = useState(FALLBACK_TEMPLATES)
   const [templateKey, setTemplateKey] = useState('qzz')
   const [files, setFiles] = useState([])
@@ -178,6 +180,10 @@ export default function App() {
 
   if (!template) return <div style={{ padding: 40, textAlign: 'center' }}>加载中...</div>
 
+  if (view === 'split') {
+    return <SplitManager onBack={() => setView('convert')} />
+  }
+
   return (
     <div className="app-root">
       <div className="bg-decoration" aria-hidden="true">
@@ -286,6 +292,8 @@ export default function App() {
 
         <footer className="app-footer">
           <span>出库单转换工具</span><span className="footer-dot">·</span><span>Powered by WMS Converter</span>
+          <span className="footer-dot">·</span>
+          <button className="footer-link" onClick={() => setView('split')} type="button">拆零管理</button>
         </footer>
       </div>
     </div>

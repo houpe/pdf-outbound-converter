@@ -413,6 +413,19 @@
 }
 .footer-dot { color: var(--primary); }
 
+.footer-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  font-weight: 600;
+  transition: color var(--transition);
+}
+
+.footer-link:hover { color: var(--accent); text-decoration: underline; }
+
 /* ===== Responsive ===== */
 @media (max-width: 640px) {
   .app-inner { padding: 24px 16px 36px; }
