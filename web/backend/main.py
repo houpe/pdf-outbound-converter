@@ -731,16 +731,21 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
         ws.cell(row=i, column=7, value=item["item_name"])
         ws.cell(row=i, column=8, value=item["item_code"])
 
-        # 根据商品拆零模板决定数量放 Col9(二级单位) 还是 Col10(最小单位)
-        item_code = str(item["item_code"]).strip()
-        split_flag = split_map.get(item_code, "")
-        if split_flag == "否":
-            # 不拆零 → 放最小单位数量(Col10)
+        # 黔寨寨模板：数量统一放最小单位数量(Col10)
+        if template_key == "qzz":
             ws.cell(row=i, column=9, value="")
             ws.cell(row=i, column=10, value=quantity_val)
         else:
-            # 拆零 或 未匹配 → 默认放二级单位数量(Col9)
-            ws.cell(row=i, column=9, value=quantity_val)
-            ws.cell(row=i, column=10, value="")
+            # 其他模板：根据商品拆零模板决定放 Col9(二级单位) 还是 Col10(最小单位)
+            item_code = str(item["item_code"]).strip()
+            split_flag = split_map.get(item_code, "")
+            if split_flag == "否":
+                # 不拆零 → 放最小单位数量(Col10)
+                ws.cell(row=i, column=9, value="")
+                ws.cell(row=i, column=10, value=quantity_val)
+            else:
+                # 拆零 或 未匹配 → 默认放二级单位数量(Col9)
+                ws.cell(row=i, column=9, value=quantity_val)
+                ws.cell(row=i, column=10, value="")
 
     wb.save(output_path)
