@@ -568,6 +568,9 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
             for cell in row:
                 cell.value = None
 
+    # 先按门店名称排序，无门店则按收件人排序
+    items = sorted(items, key=lambda x: (x.get("receiver_org", ""), x.get("receiver_name", "")))
+
     for i, item in enumerate(items, start=3):
         item_receiver_name = item.get("receiver_name", header_info.get("receiver_name", ""))
         item_receiver_phone = item.get("receiver_phone", header_info.get("receiver_phone", ""))
