@@ -4,6 +4,7 @@ WMS PDF/Excel 转换工具 - FastAPI 后端
 将PDF/Excel出库单转换为标准OMS出库Excel格式。
 """
 
+import json
 import os
 import re
 import shutil
@@ -32,9 +33,27 @@ else:
 UPLOADS_DIR = BASE_DIR / "uploads"
 DOWNLOADS_DIR = BASE_DIR / "downloads"
 OMS_TEMPLATE = TEMPLATES_DIR / "OMS出库.xlsx"
+SPLIT_TEMPLATE = TEMPLATES_DIR / "商品拆零模板.xlsx"
 
 UPLOADS_DIR.mkdir(exist_ok=True)
 DOWNLOADS_DIR.mkdir(exist_ok=True)
+
+# 转换日志文件
+LOG_FILE = BASE_DIR / "conversion_log.jsonl"
+
+LOG_FIELDS = ["template_key", "template_name", "file_names", "file_count",
+              "item_count", "store_count", "total_quantity", "stores_list",
+              "output_filename", "status", "error"]
+
+
+def _safe_log(record: dict):
+    entry = {k: record.get(k) for k in LOG_FIELDS if k in record}
+    entry["timestamp"] = date.today().isoformat()
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
 # 文件限制
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
@@ -79,8 +98,6 @@ TEMPLATES = {
     },
 }
 
-app = FastAPI(title="WMS PDF/Excel 转换服务", version="3.1.0")
-
 # 生产环境 CORS：限定来源，credentials 与 wildcard 不能共存
 ALLOWED_ORIGINS = os.environ.get(
     "WMS_CORS_ORIGINS",
@@ -116,13 +133,43 @@ async def convert_file(
     template_key: str = Form(...),
     merchant_code: str = Form(default=""),
 ):
-    if template_key not in TEMPLATES:
+    template_cfg = TEMPLATES.get(template_key)
+    file_names = [f.filename for f in files]
+    log_record = {
+        "status": "error",
+        "template_key": template_key,
+        "template_name": template_cfg["name"] if template_cfg else None,
+        "file_names": file_names,
+        "file_count": len(files),
+    }
+    try:
+        result = await _do_convert(files, template_key, merchant_code, template_cfg)
+        log_record["status"] = "success"
+        log_record["output_filename"] = result["filename"]
+        log_record["item_count"] = result["item_count"]
+        log_record["parsed_files"] = result["parsed_files"]
+        log_record["store_count"] = result["store_count"]
+        log_record["total_quantity"] = result["total_quantity"]
+        log_record["stores_list"] = result.get("stores_list", [])
+        _safe_log(log_record)
+        return result
+    except HTTPException as e:
+        log_record["error"] = e.detail
+        log_record["http_status"] = e.status_code
+        _safe_log(log_record)
+        raise
+    except Exception as e:
+        log_record["error"] = str(e)
+        _safe_log(log_record)
+        raise
+
+
+async def _do_convert(files, template_key, merchant_code, template_cfg):
+    if template_cfg is None:
         raise HTTPException(status_code=400, detail=f"未知模板: {template_key}")
 
     if len(files) > MAX_FILE_COUNT:
         raise HTTPException(status_code=400, detail=f"文件数量超限，最多 {MAX_FILE_COUNT} 个")
-
-    template_cfg = TEMPLATES[template_key]
 
     if not merchant_code:
         merchant_code = template_cfg["merchant_code"]
@@ -224,7 +271,8 @@ async def convert_file(
         except (ValueError, TypeError):
             pass
 
-    return {
+    stores = sorted(stores)
+    result = {
         "success": True,
         "filename": output_filename,
         "download_url": f"/downloads/{output_filename}",
@@ -232,7 +280,27 @@ async def convert_file(
         "parsed_files": parsed_files,
         "store_count": len(stores),
         "total_quantity": total_qty,
+        "stores_list": stores,
     }
+    return result
+
+
+@app.get("/api/logs")
+def get_logs(limit: int = 200):
+    if not LOG_FILE.exists():
+        return {"logs": [], "total": 0}
+    entries = []
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    entries.reverse()
+    return {"logs": entries[:limit], "total": len(entries)}
 
 
 @app.get("/downloads/{filename}")
@@ -568,6 +636,18 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
             for cell in row:
                 cell.value = None
 
+    # Load 商品拆零 template: {商品编码 -> 是否拆零}
+    split_map = {}
+    if SPLIT_TEMPLATE.exists():
+        swb = openpyxl.load_workbook(str(SPLIT_TEMPLATE), read_only=True, data_only=True)
+        sws = swb.active
+        for r in range(2, (sws.max_row or 1) + 1):
+            code = sws.cell(row=r, column=1).value
+            flag = sws.cell(row=r, column=2).value
+            if code:
+                split_map[str(code).strip()] = str(flag or "").strip()
+        swb.close()
+
     # 先按门店名称排序，无门店则按收件人排序
     items = sorted(items, key=lambda x: (x.get("receiver_org", ""), x.get("receiver_name", "")))
 
@@ -592,11 +672,17 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
         ws.cell(row=i, column=6, value=item_receiver_org)
         ws.cell(row=i, column=7, value=item["item_name"])
         ws.cell(row=i, column=8, value=item["item_code"])
-        if template_key == "lmt":
-            ws.cell(row=i, column=9, value=quantity_val)
-            ws.cell(row=i, column=10, value="")
-        else:
+
+        # 根据商品拆零模板决定数量放 Col9(二级单位) 还是 Col10(最小单位)
+        item_code = str(item["item_code"]).strip()
+        split_flag = split_map.get(item_code, "")
+        if split_flag == "否":
+            # 不拆零 → 放最小单位数量(Col10)
             ws.cell(row=i, column=9, value="")
             ws.cell(row=i, column=10, value=quantity_val)
+        else:
+            # 拆零 或 未匹配 → 默认放二级单位数量(Col9)
+            ws.cell(row=i, column=9, value=quantity_val)
+            ws.cell(row=i, column=10, value="")
 
     wb.save(output_path)
