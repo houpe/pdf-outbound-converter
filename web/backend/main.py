@@ -170,6 +170,7 @@ async def convert_file(
                 file_header, items = extract_pdf_data(str(upload_path))
 
             for item in items:
+                item.setdefault("order_no", file_header.get("order_no", ""))
                 item.setdefault("receiver_org", file_header.get("receiver_org", ""))
                 item.setdefault("receiver_name", file_header.get("receiver_name", ""))
                 item.setdefault("receiver_phone", file_header.get("receiver_phone", ""))
@@ -558,8 +559,9 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
         item_receiver_phone = item.get("receiver_phone", header_info.get("receiver_phone", ""))
         item_receiver_address = item.get("receiver_address", header_info.get("receiver_address", ""))
         item_receiver_org = item.get("receiver_org", header_info.get("receiver_org", ""))
+        item_order_no = item.get("order_no", header_info.get("order_no", ""))
 
-        ws.cell(row=i, column=1, value=header_info.get("order_no", ""))
+        ws.cell(row=i, column=1, value=item_order_no)
         ws.cell(row=i, column=2, value=merchant_code)
         ws.cell(row=i, column=3, value="ZTOWHHY001")
         ws.cell(row=i, column=4, value="")
