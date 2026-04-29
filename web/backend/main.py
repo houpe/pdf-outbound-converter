@@ -561,19 +561,25 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
         item_receiver_org = item.get("receiver_org", header_info.get("receiver_org", ""))
         item_order_no = item.get("order_no", header_info.get("order_no", ""))
 
+        quantity_val = str(item["quantity"]).strip()
+        try:
+            quantity_val = int(float(quantity_val))
+        except (ValueError, TypeError):
+            pass
+
         ws.cell(row=i, column=1, value=item_order_no)
         ws.cell(row=i, column=2, value=merchant_code)
         ws.cell(row=i, column=3, value="ZTOWHHY001")
         ws.cell(row=i, column=4, value="")
         ws.cell(row=i, column=5, value=f"{item_receiver_name},{item_receiver_phone},{item_receiver_address}")
         ws.cell(row=i, column=6, value=item["item_code"])
-        ws.cell(row=i, column=7, value="")
-        quantity_val = str(item["quantity"]).strip()
-        try:
-            quantity_val = int(float(quantity_val))
-        except (ValueError, TypeError):
-            pass
-        ws.cell(row=i, column=8, value=quantity_val)
+        if template_key == "lmt":
+            # 黎明屯：数量放二级单位数量列
+            ws.cell(row=i, column=7, value=quantity_val)
+            ws.cell(row=i, column=8, value="")
+        else:
+            ws.cell(row=i, column=7, value="")
+            ws.cell(row=i, column=8, value=quantity_val)
         ws.cell(row=i, column=9, value=item_receiver_org)
         ws.cell(row=i, column=10, value=item["item_name"])
 
