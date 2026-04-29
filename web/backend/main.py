@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import uuid
 import time
 import logging
@@ -18,7 +19,7 @@ from collections import defaultdict
 
 import pdfplumber
 import openpyxl
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -51,6 +52,46 @@ SPLIT_TEMPLATE = _find_template("商品拆零模板.xlsx")
 
 UPLOADS_DIR.mkdir(exist_ok=True)
 DOWNLOADS_DIR.mkdir(exist_ok=True)
+
+DB_PATH = BASE_DIR / "split_codes.db"
+
+def get_db():
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+def init_db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS split_codes (
+            code TEXT PRIMARY KEY COLLATE NOCASE,
+            split TEXT NOT NULL DEFAULT '是',
+            item_name TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        )
+    """)
+    
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(split_codes)")]
+    if 'created_at' not in cols:
+        try: conn.execute("ALTER TABLE split_codes ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))")
+        except: pass
+    if 'item_name' not in cols:
+        try: conn.execute("ALTER TABLE split_codes ADD COLUMN item_name TEXT")
+        except: pass
+    conn.commit()
+    conn.close()
+
+def get_split_map():
+    """Return {code_lower: split} from SQLite"""
+    conn = get_db()
+    cur = conn.execute("SELECT code, split FROM split_codes")
+    result = {row["code"].lower(): row["split"] for row in cur}
+    conn.close()
+    return result
+
+# ...
 
 # 转换日志文件
 LOG_FILE = BASE_DIR / "conversion_log.jsonl"
@@ -103,7 +144,8 @@ def cleanup_expired_downloads():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动时清理过期下载文件，并定期清理"""
+    """启动时初始化拆零数据库并清理过期下载文件"""
+    init_db()
     cleanup_expired_downloads()
     import asyncio
     async def _periodic_cleanup():
@@ -272,6 +314,7 @@ async def _do_convert(files, template_key, merchant_code, template_cfg):
                 item.setdefault("receiver_name", file_header.get("receiver_name", ""))
                 item.setdefault("receiver_phone", file_header.get("receiver_phone", ""))
                 item.setdefault("receiver_address", file_header.get("receiver_address", ""))
+                item.setdefault("source_file", file.filename)
 
             all_items.extend(items)
             if file_header.get("receiver_org"):
@@ -305,6 +348,8 @@ async def _do_convert(files, template_key, merchant_code, template_cfg):
 
     try:
         create_excel(header_info, all_items, oms_template_path, str(output_path), merchant_code, template_key)
+    except HTTPException:
+        raise
     except Exception as e:
         if output_path.exists():
             os.remove(output_path)
@@ -331,6 +376,7 @@ async def _do_convert(files, template_key, merchant_code, template_cfg):
         "store_count": len(stores),
         "total_quantity": total_qty,
         "stores_list": stores,
+        "warnings": [],
     }
     return result
 
@@ -360,20 +406,10 @@ class SplitCodeCreate(BaseModel):
 
 @app.get("/api/split-codes")
 def list_split_codes():
-    if not SPLIT_TEMPLATE.exists():
-        return {"codes": [], "total": 0}
-    codes = []
-    try:
-        wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE), read_only=True, data_only=True)
-        ws = wb.active
-        for r in range(2, (ws.max_row or 1) + 1):
-            code = ws.cell(row=r, column=1).value
-            flag = ws.cell(row=r, column=2).value
-            if code:
-                codes.append({"code": str(code).strip(), "split": str(flag or "").strip()})
-        wb.close()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取拆零模板失败: {str(e)}")
+    conn = get_db()
+    cur = conn.execute("SELECT code, split, item_name, created_at FROM split_codes ORDER BY created_at DESC")
+    codes = [{"code": row["code"], "split": row["split"], "item_name": row["item_name"], "created_at": row["created_at"]} for row in cur]
+    conn.close()
     return {"codes": codes, "total": len(codes)}
 
 
@@ -383,47 +419,28 @@ def create_split_code(input: SplitCodeCreate):
         raise HTTPException(status_code=400, detail="拆零值必须为「是」或「否」")
     if not input.code.strip():
         raise HTTPException(status_code=400, detail="商品编码不能为空")
-    if not SPLIT_TEMPLATE.exists():
-        raise HTTPException(status_code=500, detail="拆零模板文件不存在")
-
-    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
-    ws = wb.active
-    for r in range(2, (ws.max_row or 1) + 1):
-        existing = ws.cell(row=r, column=1).value
-        if existing and str(existing).strip() == input.code.strip():
-            wb.close()
-            raise HTTPException(status_code=409, detail=f"商品编码 {input.code} 已存在")
-    wb.save(str(SPLIT_TEMPLATE))
-    wb.close()
-
-    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
-    ws = wb.active
-    next_row = (ws.max_row or 1) + 1
-    ws.cell(row=next_row, column=1, value=input.code.strip())
-    ws.cell(row=next_row, column=2, value=input.split)
-    wb.save(str(SPLIT_TEMPLATE))
-    wb.close()
-    return {"success": True, "code": input.code.strip(), "split": input.split}
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO split_codes (code, split) VALUES (?, ?)",
+            (input.code.strip(), input.split)
+        )
+        conn.commit()
+        return {"success": True, "code": input.code.strip(), "split": input.split}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail=f"商品编码 {input.code} 已存在")
+    finally:
+        conn.close()
 
 
 @app.delete("/api/split-codes/{code:path}")
 def delete_split_code(code: str):
-    if not SPLIT_TEMPLATE.exists():
-        raise HTTPException(status_code=500, detail="拆零模板文件不存在")
-    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
-    ws = wb.active
-    deleted = False
-    for r in range(2, (ws.max_row or 1) + 1):
-        existing = ws.cell(row=r, column=1).value
-        if existing and str(existing).strip() == code.strip():
-            ws.delete_rows(r, 1)
-            deleted = True
-            break
-    if not deleted:
-        wb.close()
+    conn = get_db()
+    cur = conn.execute("DELETE FROM split_codes WHERE LOWER(code) = LOWER(?)", (code.strip(),))
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail=f"商品编码 {code} 未找到")
-    wb.save(str(SPLIT_TEMPLATE))
-    wb.close()
     return {"success": True, "deleted": code.strip()}
 
 
@@ -433,49 +450,65 @@ def update_split_code(old_code: str, input: SplitCodeCreate):
         raise HTTPException(status_code=400, detail="拆零值必须为「是」或「否」")
     if not input.code.strip():
         raise HTTPException(status_code=400, detail="商品编码不能为空")
-    if not SPLIT_TEMPLATE.exists():
-        raise HTTPException(status_code=500, detail="拆零模板文件不存在")
-    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
-    ws = wb.active
-    updated = False
-    for r in range(2, (ws.max_row or 1) + 1):
-        existing = ws.cell(row=r, column=1).value
-        if existing and str(existing).strip() == old_code.strip():
-            ws.cell(row=r, column=1, value=input.code.strip())
-            ws.cell(row=r, column=2, value=input.split)
-            updated = True
-            break
-    if not updated:
-        wb.close()
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE split_codes SET code = ?, split = ? WHERE LOWER(code) = LOWER(?)",
+        (input.code.strip(), input.split, old_code.strip())
+    )
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail=f"商品编码 {old_code} 未找到")
-    wb.save(str(SPLIT_TEMPLATE))
-    wb.close()
     return {"success": True, "old_code": old_code.strip(), "code": input.code.strip(), "split": input.split}
 
 
-@app.post("/api/split-codes/deduplicate")
-def deduplicate_split_codes():
-    if not SPLIT_TEMPLATE.exists():
-        raise HTTPException(status_code=500, detail="拆零模板文件不存在")
-    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
-    ws = wb.active
-    seen = {}
-    rows_to_delete = []
-    for r in range(2, (ws.max_row or 1) + 1):
-        code = ws.cell(row=r, column=1).value
-        flag = ws.cell(row=r, column=2).value
-        if code:
-            key = str(code).strip()
-            if key in seen:
-                rows_to_delete.append(r)
+class BatchItem(BaseModel):
+    id: str
+    code: str
+    split: str
+
+
+@app.patch("/api/split-codes/batch")
+def batch_upsert_split_codes(items: list[BatchItem] = Body(...)):
+    conn = get_db()
+    success = []
+    errors = []
+    for item in items:
+        code = item.code.strip()
+        if not code:
+            errors.append({"id": item.id, "error": "编码不能为空"})
+            continue
+        if item.split not in ("是", "否"):
+            errors.append({"id": item.id, "error": "拆零值必须为「是」或「否」"})
+            continue
+        try:
+            if not item.id:
+                conn.execute(
+                    "INSERT INTO split_codes (code, split, created_at) VALUES (?, ?, datetime('now', 'localtime'))",
+                    (code, item.split)
+                )
+                success.append({"id": item.id or code, "code": code, "split": item.split, "action": "added"})
             else:
-                seen[key] = str(flag or "").strip()
-    if rows_to_delete:
-        for r in rows_to_delete[::-1]:
-            ws.delete_rows(r, 1)
-    wb.save(str(SPLIT_TEMPLATE))
-    wb.close()
-    return {"success": True, "removed": len(rows_to_delete), "kept": len(seen)}
+                cur = conn.execute(
+                    "UPDATE split_codes SET code = ?, split = ? WHERE LOWER(code) = LOWER(?)",
+                    (code, item.split, item.id)
+                )
+                if cur.rowcount == 0:
+                    errors.append({"id": item.id, "error": f"未找到编码 {item.id}"})
+                else:
+                    success.append({"id": item.id, "code": code, "split": item.split, "action": "updated"})
+        except sqlite3.IntegrityError:
+            errors.append({"id": item.id, "error": f"商品编码 {code} 已存在"})
+            conn.execute("ROLLBACK")
+            conn.close()
+            raise HTTPException(status_code=409, detail=errors)
+    if errors:
+        conn.execute("ROLLBACK")
+        conn.close()
+        raise HTTPException(status_code=400, detail=errors)
+    conn.commit()
+    conn.close()
+    return {"success": True, "count": len(success), "items": success}
 
 
 @app.get("/downloads/{filename}")
@@ -820,19 +853,34 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
             for cell in row:
                 cell.value = None
 
-    # Load 商品拆零 template: {商品编码 -> 是否拆零}
-    split_map = {}
-    if SPLIT_TEMPLATE.exists():
-        swb = openpyxl.load_workbook(str(SPLIT_TEMPLATE), read_only=True, data_only=True)
-        sws = swb.active
-        for r in range(2, (sws.max_row or 1) + 1):
-            code = sws.cell(row=r, column=1).value
-            flag = sws.cell(row=r, column=2).value
-            if code:
-                split_map[str(code).strip()] = str(flag or "").strip()
-        swb.close()
+    split_map = get_split_map()
 
-    # 先按门店名称排序，无门店则按收件人排序
+    # 仅黎明屯铁锅炖校验拆零配置
+    if template_key == "lmt":
+        missing_items = []
+        for item in items:
+            ic = str(item["item_code"]).strip()
+            if ic and ic.lower() not in split_map:
+                sf = item.get("source_file", "未知文件")
+                name = item.get("item_name", "—")
+                missing_items.append({"code": ic, "name": name, "source": sf})
+        seen = set()
+        unique_missing = []
+        for m in missing_items:
+            if m["code"] not in seen:
+                seen.add(m["code"])
+                unique_missing.append(m)
+        if unique_missing:
+            msg_parts = [f"「{m['code']}」（来自 {m['source']}）" for m in unique_missing]
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "商品编码缺失",
+                    "codes": unique_missing,
+                    "message": f"以下 {len(unique_missing)} 个商品编码不在拆零管理表中：\n" + "\n".join(msg_parts)
+                }
+            )
+
     items = sorted(items, key=lambda x: (x.get("receiver_org", ""), x.get("receiver_name", "")))
 
     for i, item in enumerate(items, start=3):
@@ -864,13 +912,11 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
         else:
             # 其他模板：根据商品拆零模板决定放 Col9(二级单位) 还是 Col10(最小单位)
             item_code = str(item["item_code"]).strip()
-            split_flag = split_map.get(item_code, "")
-            if split_flag == "否":
-                # 不拆零 → 放最小单位数量(Col10)
+            split_flag = split_map.get(item_code.lower(), "")
+            if split_flag == "否":  # 不拆零 → 放最小单位数量(Col10)
                 ws.cell(row=i, column=9, value="")
                 ws.cell(row=i, column=10, value=quantity_val)
-            else:
-                # 拆零 或 未匹配 → 默认放二级单位数量(Col9)
+            else:  # 拆零 → 放二级单位数量(Col9)
                 ws.cell(row=i, column=9, value=quantity_val)
                 ws.cell(row=i, column=10, value="")
 

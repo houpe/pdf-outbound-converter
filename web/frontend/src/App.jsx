@@ -6,7 +6,6 @@ import SplitManager from './SplitManager'
 const API_BASE = import.meta.env.PROD ? '/wms/api' : '/api'
 const DOWNLOAD_BASE = import.meta.env.PROD ? '/wms/downloads' : '/downloads'
 
-// Fallback used only during initial load / network error
 const FALLBACK_TEMPLATES = {
   qzz:  { name: '黔寨寨贵州烙锅', accept: '.pdf' },
   lmt:  { name: '黎明屯铁锅炖',   accept: '.xlsx,.xls' },
@@ -60,6 +59,73 @@ function IconSparkle() {
   )
 }
 
+function SplitToggle({ value, onChange }) {
+  return (
+    <div style={{ display: 'inline-flex', background: '#f3f4f6', borderRadius: '6px', overflow: 'hidden', border: '1px solid #e5e7eb' }}>
+      <button type="button" style={{ padding: '4px 8px', fontSize: '12px', fontWeight: value === '是' ? '600' : '400', color: value === '是' ? '#fff' : '#6b7280', background: value === '是' ? '#10B981' : 'transparent', border: 'none', cursor: 'pointer' }} onClick={() => onChange('是')}>拆零</button>
+      <button type="button" style={{ padding: '4px 8px', fontSize: '12px', fontWeight: value === '否' ? '600' : '400', color: value === '否' ? '#fff' : '#6b7280', background: value === '否' ? '#F59E0B' : 'transparent', border: 'none', cursor: 'pointer' }} onClick={() => onChange('否')}>不拆零</button>
+    </div>
+  )
+}
+
+function MissingCodesDialog({ codes, onClose, onRetry }) {
+  if (!codes?.length) return null
+  const [items, setItems] = useState(codes.map(c => ({ code: c.code, split: '是', source: c.source })))
+  const [loading, setLoading] = useState(false)
+
+  const handleSave = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/split-codes/batch`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(items.map(i => ({ id: '', code: i.code, split: i.split }))),
+      })
+      if (!res.ok) throw new Error('请求失败')
+      setLoading(false)
+      onClose()
+      if (onRetry) onRetry()
+    } catch {
+      setLoading(false)
+    }
+  }
+
+  const updateItem = (index, field, value) => {
+    setItems(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item))
+  }
+
+  return (
+    <div className="missing-overlay" onClick={onClose}>
+      <div className="missing-dialog" onClick={e => e.stopPropagation()}>
+        <div className="missing-dialog__header">
+          <h3>⚠️ 需配置拆零规则</h3>
+          <button className="missing-dialog__close" onClick={onClose}>✕</button>
+        </div>
+        <div className="missing-dialog__body">
+          <p className="missing-dialog__desc">以下 {items.length} 个商品编码未配置，请设置拆零规则：</p>
+          <div className="missing-dialog__codes" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            {items.map((item, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#f9fafb', borderRadius: '8px', marginBottom: '8px', border: '1px solid #e5e7eb' }}>
+                <div>
+                  <code style={{ fontWeight: '700', color: '#D97706', fontSize: '14px' }}>{item.code}</code>
+                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>来自 {item.source}</div>
+                </div>
+                <SplitToggle value={item.split} onChange={val => updateItem(i, 'split', val)} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="missing-dialog__footer">
+          <button className="missing-dialog__btn missing-dialog__btn--primary" onClick={handleSave} disabled={loading}>
+            {loading ? '保存中...' : '保存并重试'}
+          </button>
+          <button className="missing-dialog__btn" onClick={onClose}>取消</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [view, setView] = useState('convert')
   const [templates, setTemplates] = useState(FALLBACK_TEMPLATES)
@@ -69,6 +135,7 @@ export default function App() {
   const [result, setResult] = useState(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [logLines, setLogLines] = useState([])
+  const [missingCodes, setMissingCodes] = useState(null)
   const fileInputRef = useRef(null)
 
   // Fetch templates from backend on mount
@@ -154,6 +221,9 @@ export default function App() {
         setResult(res.data)
         addLine(`✅ 转换成功! 共 ${res.data.parsed_files} 个文件，${res.data.item_count} 条记录`, 'success')
         addLine(`📁 输出文件: ${res.data.filename}`, 'info')
+        if (res.data.warnings && res.data.warnings.length > 0) {
+          res.data.warnings.forEach(w => addLine(w, 'warn'))
+        }
         const link = document.createElement('a')
         link.href = `${DOWNLOAD_BASE}/${res.data.filename}`
         link.download = res.data.filename
@@ -167,9 +237,16 @@ export default function App() {
       }
     } catch (err) {
       setProgress(null)
-      const msg = err?.response?.data?.detail || err?.response?.data?.error || err?.message || '未知错误'
-      addLine(`❌ 请求失败: ${msg}`, 'error')
-      setResult({ success: false, error: msg })
+      const detail = err?.response?.data?.detail
+      if (detail && typeof detail === 'object' && detail.codes) {
+        setMissingCodes(detail.codes)
+        addLine(`❌ 转换已取消：${detail.codes.length} 个商品编码未在拆零管理表中配置`, 'error')
+        setResult({ success: false, error: detail.message })
+      } else {
+        const msg = typeof detail === 'string' ? detail : (err?.response?.data?.error || err?.message || '未知错误')
+        addLine(`❌ 请求失败: ${msg}`, 'error')
+        setResult({ success: false, error: msg })
+      }
     }
   }
 
@@ -296,6 +373,8 @@ export default function App() {
           <button className="footer-link" onClick={() => setView('split')} type="button">拆零管理</button>
         </footer>
       </div>
+
+      <MissingCodesDialog codes={missingCodes} onClose={() => setMissingCodes(null)} onRetry={handleConvert} />
     </div>
   )
 }
