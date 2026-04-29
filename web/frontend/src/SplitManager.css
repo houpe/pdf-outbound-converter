@@ -148,6 +148,37 @@
 .sm-add__btn:active { transform: translateY(0); }
 .sm-add__btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Toolbar */
+.sm-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.sm-toolbar .sm-search {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.sm-dedup-btn {
+  flex-shrink: 0;
+  padding: 8px 18px;
+  background: #F59E0B;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.sm-dedup-btn:hover { background: #D97706; transform: translateY(-1px); }
+.sm-dedup-btn:active { transform: translateY(0); }
+.sm-dedup-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* Search */
 .sm-search {
   display: flex;
@@ -239,8 +270,14 @@
 .sm-badge--yes { background: #D1FAE5; color: #065F46; }
 .sm-badge--no { background: #FEF3C7; color: #92400E; }
 
-/* Delete button */
-.sm-del {
+/* Action buttons */
+.sm-cell-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.sm-action-btn {
   background: none;
   border: none;
   color: var(--text-muted);
@@ -252,9 +289,33 @@
   align-items: center;
 }
 
-.sm-del:hover {
-  background: var(--error);
+.sm-action-btn:hover {
+  background: var(--primary);
   color: #fff;
+}
+
+.sm-action-btn--danger:hover { background: var(--error); color: #fff; }
+
+.sm-action-btn--save { color: #059669; }
+.sm-action-btn--save:hover { background: #10B981; color: #fff; }
+.sm-action-btn--cancel { color: #EF4444; }
+.sm-action-btn--cancel:hover { background: #EF4444; color: #fff; }
+
+/* Inline editing row */
+.sm-row--editing {
+  background: #FEF9F3 !important;
+}
+
+.sm-cell-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: #fff;
+  border: 2px solid var(--primary);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  color: var(--text);
+  outline: none;
 }
 
 /* Responsive */

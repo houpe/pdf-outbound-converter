@@ -427,6 +427,57 @@ def delete_split_code(code: str):
     return {"success": True, "deleted": code.strip()}
 
 
+@app.put("/api/split-codes/{old_code:path}")
+def update_split_code(old_code: str, input: SplitCodeCreate):
+    if input.split not in ("是", "否"):
+        raise HTTPException(status_code=400, detail="拆零值必须为「是」或「否」")
+    if not input.code.strip():
+        raise HTTPException(status_code=400, detail="商品编码不能为空")
+    if not SPLIT_TEMPLATE.exists():
+        raise HTTPException(status_code=500, detail="拆零模板文件不存在")
+    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
+    ws = wb.active
+    updated = False
+    for r in range(2, (ws.max_row or 1) + 1):
+        existing = ws.cell(row=r, column=1).value
+        if existing and str(existing).strip() == old_code.strip():
+            ws.cell(row=r, column=1, value=input.code.strip())
+            ws.cell(row=r, column=2, value=input.split)
+            updated = True
+            break
+    if not updated:
+        wb.close()
+        raise HTTPException(status_code=404, detail=f"商品编码 {old_code} 未找到")
+    wb.save(str(SPLIT_TEMPLATE))
+    wb.close()
+    return {"success": True, "old_code": old_code.strip(), "code": input.code.strip(), "split": input.split}
+
+
+@app.post("/api/split-codes/deduplicate")
+def deduplicate_split_codes():
+    if not SPLIT_TEMPLATE.exists():
+        raise HTTPException(status_code=500, detail="拆零模板文件不存在")
+    wb = openpyxl.load_workbook(str(SPLIT_TEMPLATE))
+    ws = wb.active
+    seen = {}
+    rows_to_delete = []
+    for r in range(2, (ws.max_row or 1) + 1):
+        code = ws.cell(row=r, column=1).value
+        flag = ws.cell(row=r, column=2).value
+        if code:
+            key = str(code).strip()
+            if key in seen:
+                rows_to_delete.append(r)
+            else:
+                seen[key] = str(flag or "").strip()
+    if rows_to_delete:
+        for r in rows_to_delete[::-1]:
+            ws.delete_rows(r, 1)
+    wb.save(str(SPLIT_TEMPLATE))
+    wb.close()
+    return {"success": True, "removed": len(rows_to_delete), "kept": len(seen)}
+
+
 @app.get("/downloads/{filename}")
 def download_file(filename: str):
     # 防止路径遍历攻击
