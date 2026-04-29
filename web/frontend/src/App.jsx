@@ -67,7 +67,6 @@ export default function App() {
   const [result, setResult] = useState(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [logLines, setLogLines] = useState([])
-  const logCounter = useRef(0)
   const fileInputRef = useRef(null)
 
   // Fetch templates from backend on mount
@@ -89,8 +88,7 @@ export default function App() {
   const acceptExts = template ? getAcceptExts(template.accept) : ['.pdf']
 
   const addLine = useCallback((msg, type = 'info') => {
-    logCounter.current += 1
-    setLogLines(prev => [...prev, { msg, type, id: logCounter.current }])
+    setLogLines(prev => [...prev, { msg, type, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }])
   }, [])
 
   const handleTemplateChange = (key) => {
@@ -113,7 +111,7 @@ export default function App() {
     setFiles(selected)
     setResult(null)
     const names = selected.map(f => f.name).join('、')
-    setLogLines(p => [...p, { msg: `已选择${selected.length}个文件: ${names}`, type: 'info', id: ++logCounter.current }])
+    setLogLines(p => [...p, { msg: `已选择${selected.length}个文件: ${names}`, type: 'info', id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }])
   }, [])
 
   const onDragOver = (e) => { e.preventDefault(); setIsDragOver(true) }
@@ -154,14 +152,12 @@ export default function App() {
         setResult(res.data)
         addLine(`✅ 转换成功! 共 ${res.data.parsed_files} 个文件，${res.data.item_count} 条记录`, 'success')
         addLine(`📁 输出文件: ${res.data.filename}`, 'info')
-        setTimeout(() => {
-          const link = document.createElement('a')
-          link.href = `${DOWNLOAD_BASE}/${res.data.filename}`
-          link.download = res.data.filename
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-        }, 300)
+        const link = document.createElement('a')
+        link.href = `${DOWNLOAD_BASE}/${res.data.filename}`
+        link.download = res.data.filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
       } else {
         setProgress(null)
         addLine(`❌ 转换失败: ${res.data.error}`, 'error')

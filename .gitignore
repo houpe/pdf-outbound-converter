@@ -40,6 +40,11 @@ app_icon.iconset/*.png
 # Web 运行时目录
 web/backend/uploads/
 web/backend/downloads/
+web/backend/conversion_log.jsonl
+
+# Python virtual environment
+.venv/
+venv/
 
 # 保留资源
 !app_icon.iconset/

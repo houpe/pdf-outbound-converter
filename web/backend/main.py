@@ -10,9 +10,11 @@ import re
 import shutil
 import uuid
 import time
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
+from collections import defaultdict
 
 import pdfplumber
 import openpyxl
@@ -59,7 +61,7 @@ LOG_FIELDS = ["template_key", "template_name", "file_names", "file_count",
 
 def _safe_log(record: dict):
     entry = {k: record.get(k) for k in LOG_FIELDS if k in record}
-    entry["timestamp"] = date.today().isoformat()
+    entry["timestamp"] = datetime.now().isoformat()
     try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -73,6 +75,22 @@ MAX_FILE_COUNT = 50
 # 下载文件保留时间（秒），默认 24 小时
 DOWNLOAD_TTL_SECONDS = 86400
 
+# API 限流：每分钟最多 30 次转换请求
+RATE_LIMIT_WINDOW = 60  # 秒
+RATE_LIMIT_MAX = 30
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(client_ip: str) -> None:
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW
+    _rate_limit_store[client_ip] = [
+        t for t in _rate_limit_store[client_ip] if t > window_start
+    ]
+    if len(_rate_limit_store[client_ip]) >= RATE_LIMIT_MAX:
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+    _rate_limit_store[client_ip].append(now)
+
 
 def cleanup_expired_downloads():
     """删除超过 TTL 的下载文件"""
@@ -84,12 +102,22 @@ def cleanup_expired_downloads():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动时清理过期下载文件"""
+    """启动时清理过期下载文件，并定期清理"""
     cleanup_expired_downloads()
+    import asyncio
+    async def _periodic_cleanup():
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                cleanup_expired_downloads()
+            except Exception:
+                pass
+    task = asyncio.create_task(_periodic_cleanup())
     yield
+    task.cancel()
 
 
-app = FastAPI(title="WMS PDF/Excel 转换服务", version="3.2.0", lifespan=lifespan)
+app = FastAPI(title="WMS PDF/Excel 转换服务", version="3.4.0", lifespan=lifespan)
 
 TEMPLATES = {
     "qzz": {
@@ -154,6 +182,11 @@ async def convert_file(
         "file_count": len(files),
     }
     try:
+        if merchant_code and len(merchant_code) > 64:
+            raise HTTPException(status_code=400, detail="商户编码过长（最多64字符）")
+        if merchant_code and not re.match(r'^[A-Za-z0-9_-]+$', merchant_code):
+            raise HTTPException(status_code=400, detail="商户编码只能包含字母、数字、下划线和连字符")
+
         result = await _do_convert(files, template_key, merchant_code, template_cfg)
         log_record["status"] = "success"
         log_record["output_filename"] = result["filename"]
@@ -200,6 +233,7 @@ async def _do_convert(files, template_key, merchant_code, template_cfg):
 
         safe_name = f"{uuid.uuid4().hex}{ext}"
         upload_path = UPLOADS_DIR / safe_name
+        file_saved = False
 
         # 流式写入，避免整个文件加载到内存
         try:
@@ -211,12 +245,16 @@ async def _do_convert(files, template_key, merchant_code, template_cfg):
                         break
                     total += len(chunk)
                     if total > MAX_FILE_SIZE:
-                        os.remove(upload_path)
                         raise HTTPException(status_code=400, detail=f"文件 '{file.filename}' 超出大小限制 (50MB)")
                     f.write(chunk)
+            file_saved = True
         except HTTPException:
+            if upload_path.exists():
+                upload_path.unlink(missing_ok=True)
             raise
         except Exception as e:
+            if upload_path.exists():
+                upload_path.unlink(missing_ok=True)
             raise HTTPException(status_code=500, detail=f"文件保存失败: {str(e)}")
 
         try:
@@ -243,8 +281,8 @@ async def _do_convert(files, template_key, merchant_code, template_cfg):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"文件 '{file.filename}' 转换失败: {str(e)}")
         finally:
-            if upload_path.exists():
-                os.remove(upload_path)
+            if file_saved and upload_path.exists():
+                upload_path.unlink(missing_ok=True)
 
     if not all_items:
         raise HTTPException(status_code=400, detail="未能解析到任何商品数据")
@@ -347,11 +385,11 @@ def parse_header(text):
     info = {}
     match = re.search(r"单据编号[：:]\s*(\S+)", text)
     info["order_no"] = match.group(1) if match else ""
-    match = re.search(r"收货机构[：:]\s*([^  ]+?)(?=\s+[^\s：:]+[：:]|$)", text)
+    match = re.search(r"收货机构[：:]\s*(.+?)(?=\n\s*[^\s：:]+[：:]|$)", text)
     info["receiver_org"] = match.group(1).strip() if match else ""
-    match = re.search(r"供货机构[：:]\s*([^  ]+?)(?=\s+[^\s：:]+[：:]|$)", text)
+    match = re.search(r"供货机构[：:]\s*(.+?)(?=\n\s*[^\s：:]+[：:]|$)", text)
     info["supplier_org"] = match.group(1).strip() if match else ""
-    match = re.search(r"收货人[：:]\s*([^  ]+?)(?=\s+[^\s：:]+[：:]|$)", text)
+    match = re.search(r"收货人[：:]\s*(.+?)(?=\n\s*[^\s：:]+[：:]|$)", text)
     info["receiver_name"] = match.group(1).strip() if match else ""
     match = re.search(r"收货电话[：:]\s*(\d+)", text)
     info["receiver_phone"] = match.group(1) if match else ""
@@ -574,12 +612,23 @@ def parse_hlmc_excel(excel_path):
     if not shop_cols:
         raise ValueError("欢乐牧场模板格式错误：找不到店铺列")
 
-    # 欢乐牧场默认收件人信息
-    HLMC_RECEIVERS = {
-        "银泰":     {"name": "王先生", "phone": "15289437124", "address": "湖北省武汉市武昌区银泰创意城欢乐牧场"},
-        "金银潭":   {"name": "白先生", "phone": "18235064843", "address": "湖北省武汉市东西湖区金银潭永旺欢乐牧场"},
-        "金桥":     {"name": "张明",   "phone": "13382067388", "address": "湖北省武汉市江岸区金桥永旺欢乐牧场"},
-    }
+    # 欢乐牧场默认收件人信息（可通过环境变量 HLMC_RECEIVERS_JSON 覆盖）
+    _hlmc_receivers_env = os.environ.get("HLMC_RECEIVERS_JSON", "")
+    if _hlmc_receivers_env:
+        try:
+            HLMC_RECEIVERS = json.loads(_hlmc_receivers_env)
+        except json.JSONDecodeError:
+            HLMC_RECEIVERS = {
+                "银泰":     {"name": "王先生", "phone": "15289437124", "address": "湖北省武汉市武昌区银泰创意城欢乐牧场"},
+                "金银潭":   {"name": "白先生", "phone": "18235064843", "address": "湖北省武汉市东西湖区金银潭永旺欢乐牧场"},
+                "金桥":     {"name": "张明",   "phone": "13382067388", "address": "湖北省武汉市江岸区金桥永旺欢乐牧场"},
+            }
+    else:
+        HLMC_RECEIVERS = {
+            "银泰":     {"name": "王先生", "phone": "15289437124", "address": "湖北省武汉市武昌区银泰创意城欢乐牧场"},
+            "金银潭":   {"name": "白先生", "phone": "18235064843", "address": "湖北省武汉市东西湖区金银潭永旺欢乐牧场"},
+            "金桥":     {"name": "张明",   "phone": "13382067388", "address": "湖北省武汉市江岸区金桥永旺欢乐牧场"},
+        }
 
     def _match_store(shop_name):
         for key, recv in HLMC_RECEIVERS.items():
@@ -671,7 +720,7 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
         try:
             quantity_val = int(float(quantity_val))
         except (ValueError, TypeError):
-            pass
+            quantity_val = 0
 
         ws.cell(row=i, column=1, value=item_order_no)
         ws.cell(row=i, column=2, value=merchant_code)
