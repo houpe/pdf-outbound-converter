@@ -389,7 +389,7 @@ def parse_header(text):
     info["receiver_org"] = match.group(1).strip() if match else ""
     match = re.search(r"供货机构[：:]\s*(.+?)(?=\n\s*[^\s：:]+[：:]|$)", text)
     info["supplier_org"] = match.group(1).strip() if match else ""
-    match = re.search(r"收货人[：:]\s*(.+?)(?=\n\s*[^\s：:]+[：:]|$)", text)
+    match = re.search(r"收货人[：:]\s*(.+?)(?=\s*收货[电话地址]|[：:]\s*1\d{10}|\n\s*[^\s：:]+[：:]|$)", text)
     info["receiver_name"] = match.group(1).strip() if match else ""
     match = re.search(r"收货电话[：:]\s*(\d+)", text)
     info["receiver_phone"] = match.group(1) if match else ""
