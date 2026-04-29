@@ -6,7 +6,8 @@
 
 - 📄 **PDF解析**: 自动提取PDF出库单中的头部信息和商品明细
 - 📊 **多模板支持**: 内置黔寨寨、黎明屯、欢乐牧场 3种模板
-- 🔀 **商品拆零路由**: 根据拆零配置自动将数量分配到二级单位或最小单位
+- 🔀 **商品拆零路由**: 根据 SQLite 拆零配置自动将数量分配到二级单位或最小单位
+- 🧩 **商品拆零管理**: 支持页面内直接新增/编辑编码、切换是否拆零、保存到数据库、查看创建时间、确认删除
 - 📝 **转换日志**: 每次转换自动记录（JSONL格式），可通过 `/api/logs` 查询统计
 - ⬇️ **自动下载**: 转换完成后自动下载结果文件
 - 🖥️ **Web界面**: 基于React + Vite，支持拖拽上传
@@ -39,13 +40,28 @@
 
 ### 商品拆零规则
 
-根据 `商品拆零模板.xlsx` 配置自动路由数量列：
+商品拆零配置存储在后端 SQLite 数据库 `web/backend/split_codes.db`，通过页面底部「拆零管理」入口维护，不再从 `商品拆零模板.xlsx` 读取业务配置。
 
 | 是否拆零 | 数量填入列 | 说明 |
 |----------|-----------|------|
 | 是 | I列（二级单位） | 需要拆零的商品 |
 | 否 | J列（最小单位） | 直接以最小销售单位发货 |
 | 未配置 | I列（二级单位） | 默认按拆零处理 |
+
+#### 拆零校验策略
+
+| 模板 | 是否校验拆零管理中存在编码 | 说明 |
+|------|----------------------------|------|
+| 黔寨寨贵州烙锅 | 否 | 转换时不阻断 |
+| 黎明屯铁锅炖 | 是 | 缺失编码时弹窗提示，可在弹窗内选择拆零/不拆零并保存后重试 |
+| 欢乐牧场 | 否 | 转换时不阻断 |
+
+#### 拆零管理页面
+
+- 支持直接在表格内维护「商品编码」和「是否拆零」。
+- 点击「保存」后写入 SQLite 数据库。
+- 新增记录自动生成创建时间，列表按创建时间倒序展示。
+- 删除记录使用页面内确认弹窗，点击「确认删除」后立即从数据库删除，点击「取消」不生效。
 
 ## 项目结构
 
@@ -57,11 +73,12 @@ wms表格转换2/
 │   │   ├── requirements.txt# Python依赖
 │   │   ├── uploads/        # 上传临时目录
 │   │   ├── downloads/      # 下载结果目录
+│   │   ├── split_codes.db  # 商品拆零 SQLite 数据库（运行时生成）
 │   │   └── conversion_log.jsonl  # 转换日志
 │   └── frontend/           # React+Vite前端
 ├── templates/              # Excel模板文件
 │   ├── OMS出库.xlsx        # 输出模板
-│   ├── 商品拆零模板.xlsx    # 拆零配置表
+│   ├── 商品拆零模板.xlsx    # 历史配置模板（当前运行逻辑不读取）
 │   ├── 黎明屯铁锅炖模板.xlsx
 │   └── 欢乐牧场模板.xlsx
 └── README.md
@@ -74,7 +91,6 @@ wms表格转换2/
 ```bash
 cd web/backend
 pip install -r requirements.txt
-cp ../../templates/*.xlsx .
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -108,15 +124,14 @@ WMS_FRONT_PATH="${WMS_FRONT_PATH:-/www/wwwroot/address-weight-calc/wms}"
 # 1. 构建前端
 cd web/frontend && npm run build
 
-# 2. 部署后端+模板到服务器
+# 2. 部署后端
 scp ../../web/backend/main.py "$WMS_SERVER:$WMS_API_PATH/main.py"
-scp -r ../../templates/ "$WMS_SERVER:$WMS_API_PATH/templates/"
 
 # 3. 部署前端
 scp -r ./dist/* "$WMS_SERVER:$WMS_FRONT_PATH/"
 
 # 4. 重启服务
-ssh "$WMS_SERVER" "cd $WMS_API_PATH && pm2 restart wms-api && echo ✅ done"
+ssh "$WMS_SERVER" "pm2 restart wms-api && echo ✅ done"
 ```
 
 ### 快捷部署（单条命令）
@@ -124,7 +139,17 @@ ssh "$WMS_SERVER" "cd $WMS_API_PATH && pm2 restart wms-api && echo ✅ done"
 从项目 `web/frontend` 目录执行：
 
 ```bash
-WMS_SERVER="${WMS_SERVER:-root@your-server.com}" && npm run build && scp -r dist/* "$WMS_SERVER:/www/wwwroot/address-weight-calc/wms/" && scp ../../web/backend/main.py "$WMS_SERVER:/www/wwwroot/wms-api/main.py" && scp -r ../../templates/ "$WMS_SERVER:/www/wwwroot/wms-api/templates/" && ssh "$WMS_SERVER" 'cd /www/wwwroot/wms-api && pm2 restart wms-api && echo ✅ done'
+WMS_SERVER="${WMS_SERVER:-root@your-server.com}" && npm run build && scp -r dist/* "$WMS_SERVER:/www/wwwroot/address-weight-calc/wms/" && scp ../../web/backend/main.py "$WMS_SERVER:/www/wwwroot/wms-api/main.py" && ssh "$WMS_SERVER" 'pm2 restart wms-api && echo ✅ done'
+```
+
+### PM2 启动方式
+
+服务器使用 PM2 托管 FastAPI 后端，推荐启动命令：
+
+```bash
+cd /www/wwwroot/wms-api
+pm2 start 'python3 -m uvicorn main:app --host 0.0.0.0 --port 8000' --name wms-api
+pm2 save
 ```
 
 ### nginx 配置参考（已在 address-weight.conf 中）
@@ -185,6 +210,7 @@ cat web/backend/conversion_log.jsonl | jq .
 
 ## 版本历史
 
+- v3.5 - 商品拆零配置改为 SQLite 页面维护；拆零管理支持内联新增/编辑/保存、创建时间倒序、页面内确认删除；黎明屯缺失编码支持弹窗内配置并重试；仅黎明屯转换校验拆零配置
 - v3.4 - 修复拆零路由：新增模板回退查找逻辑；LMT门店信息从模板「收货机构」读取
 - v3.3 - 新增转换日志（JSONL）、拆零模板自动路由、转换成功后自动下载
 - v3.2 - 安全加固：路径遍历防护、lifespan 替换废弃 API、清理端点移除、requirements 合并
