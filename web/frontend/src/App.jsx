@@ -139,7 +139,6 @@ export default function App() {
     const fd = new FormData()
     files.forEach(f => fd.append('files', f))
     fd.append('template_key', templateKey)
-    fd.append('merchant_code', merchantCode)
 
     try {
       addLine('🔄 正在转换...', 'info')
