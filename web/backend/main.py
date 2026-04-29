@@ -497,6 +497,19 @@ def parse_hlmc_excel(excel_path):
     if not shop_cols:
         raise ValueError("欢乐牧场模板格式错误：找不到店铺列")
 
+    # 欢乐牧场默认收件人信息
+    HLMC_RECEIVERS = {
+        "银泰":     {"name": "王先生", "phone": "15289437124", "address": "湖北省武汉市武昌区银泰创意城欢乐牧场"},
+        "金银潭":   {"name": "白先生", "phone": "18235064843", "address": "湖北省武汉市东西湖区金银潭永旺欢乐牧场"},
+        "金桥":     {"name": "张明",   "phone": "13382067388", "address": "湖北省武汉市江岸区金桥永旺欢乐牧场"},
+    }
+
+    def _match_store(shop_name):
+        for key, recv in HLMC_RECEIVERS.items():
+            if key in shop_name:
+                return recv
+        return None
+
     r = 2
     while r <= ws.max_row:
         sku_name = ws.cell(row=r, column=col_sku_name).value if col_sku_name else ""
@@ -512,6 +525,7 @@ def parse_hlmc_excel(excel_path):
                 except (ValueError, TypeError):
                     qty_val = 0
                 if qty_val > 0:
+                    recv = _match_store(shop_name) or {}
                     all_records.append({
                         "item_code": str(ext_code or "").strip(),
                         "item_name": str(sku_name or "").strip(),
@@ -521,9 +535,9 @@ def parse_hlmc_excel(excel_path):
                         "category": "",
                         "remark": "",
                         "receiver_org": shop_name,
-                        "receiver_name": "",
-                        "receiver_phone": "",
-                        "receiver_address": "",
+                        "receiver_name": recv.get("name", ""),
+                        "receiver_phone": recv.get("phone", ""),
+                        "receiver_address": recv.get("address", ""),
                         "order_no": "",
                         "supplier_org": "",
                         "order_date": "",
