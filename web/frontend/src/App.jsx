@@ -259,6 +259,12 @@ export default function App() {
           )}
 
           {result?.success && (
+            <section className="form-section form-actions">
+              <button className="btn-download" onClick={handleDownload}><IconDownload /> 下载 Excel 文件</button>
+            </section>
+          )}
+
+          {result?.success && (
             <section className="result-card fade-in-up">
               <div className="result-header"><IconCheck /><h3>转换成功</h3></div>
               <div className="result-body">
@@ -268,7 +274,6 @@ export default function App() {
                 <div className="result-row"><span>记录数</span><strong>{result.item_count} 条</strong></div>
                 <div className="result-row"><span>文件</span><strong className="filename">{result.filename}</strong></div>
               </div>
-              <button className="btn-download" onClick={handleDownload}><IconDownload /> 下载 Excel 文件</button>
             </section>
           )}
 
