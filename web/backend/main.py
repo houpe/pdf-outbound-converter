@@ -586,15 +586,14 @@ def create_excel(header_info, items, template_path, output_path, merchant_code="
         ws.cell(row=i, column=3, value="ZTOWHHY001")
         ws.cell(row=i, column=4, value="")
         ws.cell(row=i, column=5, value=f"{item_receiver_name},{item_receiver_phone},{item_receiver_address}")
-        ws.cell(row=i, column=6, value=item["item_code"])
+        ws.cell(row=i, column=6, value=item_receiver_org)
+        ws.cell(row=i, column=7, value=item["item_name"])
+        ws.cell(row=i, column=8, value=item["item_code"])
         if template_key == "lmt":
-            # 黎明屯：数量放二级单位数量列
-            ws.cell(row=i, column=7, value=quantity_val)
-            ws.cell(row=i, column=8, value="")
+            ws.cell(row=i, column=9, value=quantity_val)
+            ws.cell(row=i, column=10, value="")
         else:
-            ws.cell(row=i, column=7, value="")
-            ws.cell(row=i, column=8, value=quantity_val)
-        ws.cell(row=i, column=9, value=item_receiver_org)
-        ws.cell(row=i, column=10, value=item["item_name"])
+            ws.cell(row=i, column=9, value="")
+            ws.cell(row=i, column=10, value=quantity_val)
 
     wb.save(output_path)
