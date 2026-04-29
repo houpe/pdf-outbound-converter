@@ -154,6 +154,14 @@ export default function App() {
         setResult(res.data)
         addLine(`✅ 转换成功! 共 ${res.data.parsed_files} 个文件，${res.data.item_count} 条记录`, 'success')
         addLine(`📁 输出文件: ${res.data.filename}`, 'info')
+        setTimeout(() => {
+          const link = document.createElement('a')
+          link.href = `${DOWNLOAD_BASE}/${res.data.filename}`
+          link.download = res.data.filename
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+        }, 300)
       } else {
         setProgress(null)
         addLine(`❌ 转换失败: ${res.data.error}`, 'error')

@@ -167,8 +167,6 @@
   border-color: var(--input-focus);
   box-shadow: 0 0 0 3px rgba(33,115,70,0.1);
 }
-.merchant-input { max-width: 100%; }
-
 /* ===== Upload Zone ===== */
 .upload-zone {
   border: 2px dashed var(--input-border);
