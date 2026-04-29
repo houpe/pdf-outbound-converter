@@ -88,39 +88,37 @@ export default function SplitManager({ onBack }) {
 
   const [pending, setPending] = useState(new Set())
   const [addRowVisible, setAddRowVisible] = useState(false)
-  const [newCode, setNewCode] = useState('')
-  const [newSplit, setNewSplit] = useState('是')
   const newInputRef = useRef(null)
+
+  const flashMsg = useCallback((text, type) => {
+    setMsg({ text, type, id: Date.now() })
+    setTimeout(() => setMsg(null), 3000)
+  }, [])
 
   const fetchCodes = useCallback(() => {
     fetch(`${API_BASE}/split-codes`)
       .then(res => res.json())
-      .then(data => setRows(data.codes || []))
+      .then(data => setRows((data.codes || []).map(row => ({ ...row, id: row.code, isNew: false }))))
       .catch(() => flashMsg('️ 获取列表失败', 'error'))
-  }, [])
+  }, [flashMsg])
 
   useEffect(() => { fetchCodes() }, [fetchCodes])
 
-  const flashMsg = (text, type) => {
-    setMsg({ text, type, id: Date.now() })
-    setTimeout(() => setMsg(null), 3000)
-  }
-
-  const updateCell = (code, field, value) => {
-    setRows(prev => prev.map(r => r.code === code ? { ...r, [field]: value } : r))
-    setPending(prev => new Set(prev).add(code))
+  const updateCell = (id, field, value) => {
+    setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r))
+    setPending(prev => new Set(prev).add(id))
   }
 
   const saveAll = async () => {
-    const changed = rows.filter(r => pending.has(r.code))
+    const changed = rows.filter(r => pending.has(r.id))
     if (changed.length === 0) { flashMsg('没有需要保存的更改', 'warn'); return }
 
     setLoading(true)
     setPending(new Set())
     try {
       const payload = changed.map(r => ({
-        id: r.code === '_new_' ? '' : r.code,
-        code: r.code === '_new_' ? (r._tempCode || r.code) : r.code,
+        id: r.isNew ? '' : r.id,
+        code: r.code,
         split: r.split,
       }))
       const res = await fetch(`${API_BASE}/split-codes/batch`, {
@@ -140,22 +138,31 @@ export default function SplitManager({ onBack }) {
       flashMsg(`✅ 已保存 ${changed.length} 条记录`, 'success')
       fetchCodes()
       setAddRowVisible(false)
-      setNewCode('')
     } catch { flashMsg('请求失败', 'error'); fetchCodes() }
     finally { setLoading(false) }
   }
 
   const [deleteTarget, setDeleteTarget] = useState(null)
 
-  const discardRow = (code) => {
-    setDeleteTarget(code)
+  const discardRow = (row) => {
+    if (row.isNew) {
+      setRows(prev => prev.filter(r => r.id !== row.id))
+      setPending(prev => {
+        const next = new Set(prev)
+        next.delete(row.id)
+        return next
+      })
+      setAddRowVisible(false)
+      return
+    }
+    setDeleteTarget(row)
   }
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/split-codes/${encodeURIComponent(deleteTarget)}`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/split-codes/${encodeURIComponent(deleteTarget.id)}`, { method: 'DELETE' })
       if (!res.ok) {
         flashMsg('删除失败', 'error')
         return
@@ -170,25 +177,15 @@ export default function SplitManager({ onBack }) {
   }
 
   const addNewRow = () => {
-    setRows(prev => [{ code: '_new_', _tempCode: '', split: '是', created_at: '' }, ...prev])
+    const id = `_new_${Date.now()}`
+    setRows(prev => [{ id, code: '', split: '是', created_at: '', isNew: true }, ...prev])
     setAddRowVisible(true)
-    setNewCode('')
-    setNewSplit('是')
-    setPending(prev => new Set(prev).add('_new_'))
+    setPending(prev => new Set(prev).add(id))
     setTimeout(() => newInputRef.current?.focus(), 50)
   }
 
-  const updateNewRow = (field, value) => {
-    setRows(prev => prev.map(r =>
-      r.code === '_new_'
-        ? { ...r, _tempCode: value, split: field === 'split' ? value : r.split }
-        : r
-    ))
-    setPending(prev => new Set(prev).add('_new_'))
-  }
-
   const filtered = rows.filter(r => {
-    const code = r.code === '_new_' ? (r._tempCode || '') : r.code
+    const code = r.code || ''
     const matchSearch = !search || code.toLowerCase().includes(search.toLowerCase())
     const matchSplit = splitFilter === '全部' || r.split === (splitFilter === '拆零' ? '是' : '否')
     return matchSearch && matchSplit
@@ -198,7 +195,6 @@ export default function SplitManager({ onBack }) {
   const [pageSize, setPageSize] = useState(10)
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const currentPage = Math.min(page, totalPages)
-  useEffect(() => { setPage(1) }, [search, splitFilter, pageSize])
 
   const startIndex = (currentPage - 1) * pageSize
   const endIndex = startIndex + pageSize
@@ -223,13 +219,13 @@ export default function SplitManager({ onBack }) {
             className="sm-search__input"
             placeholder="搜索商品编码…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
           />
         </div>
         <select
           className="sm-filter-select"
           value={splitFilter}
-          onChange={e => setSplitFilter(e.target.value)}
+          onChange={e => { setSplitFilter(e.target.value); setPage(1) }}
         >
           <option value="全部">全部规则</option>
           <option value="拆零">拆零</option>
@@ -254,26 +250,26 @@ export default function SplitManager({ onBack }) {
               </thead>
               <tbody>
                 {paginatedItems.map(r => {
-                  const isNew = r.code === '_new_'
-                  const displayCode = isNew ? (r._tempCode || '') : r.code
+                  const isNew = r.isNew
+                  const displayCode = r.code || ''
                   return (
-                    <tr key={r.code} className={isNew ? 'sm-row--new' : ''}>
+                    <tr key={r.id} className={isNew ? 'sm-row--new' : ''}>
                       <td className="sm-code">
                         <input
                           ref={isNew ? newInputRef : null}
                           className="sm-code__input"
                           value={displayCode}
-                          onChange={e => isNew ? updateNewRow('_tempCode', e.target.value) : updateCell(r.code, 'code', e.target.value)}
+                          onChange={e => updateCell(r.id, 'code', e.target.value)}
                           placeholder="输入商品编码"
                           onKeyDown={e => e.key === 'Enter' && saveAll()}
                         />
                       </td>
                       <td>
-                        <SplitToggle value={r.split} onChange={val => isNew ? updateNewRow('split', val) : updateCell(r.code, 'split', val)} />
+                        <SplitToggle value={r.split} onChange={val => updateCell(r.id, 'split', val)} />
                       </td>
                       <td className="sm-time">{r.created_at ? formatDateTime(r.created_at) : '—'}</td>
                       <td className="sm-cell-actions">
-                        <button className="sm-action-btn sm-action-btn--danger" onClick={() => discardRow(r.code)} title="删除"><IconTrash /></button>
+                        <button className="sm-action-btn sm-action-btn--danger" onClick={() => discardRow(r)} title="删除"><IconTrash /></button>
                       </td>
                     </tr>
                   )
@@ -287,7 +283,7 @@ export default function SplitManager({ onBack }) {
               <div className="sm-pagination__group">
                 <div className="sm-pagination__size-box">
                   <span className="sm-pagination__size-label">每页</span>
-                  <select className="sm-select" value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
+                  <select className="sm-select" value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}>
                     <option value={10}>10</option>
                     <option value={20}>20</option>
                     <option value={50}>50</option>
@@ -331,7 +327,7 @@ export default function SplitManager({ onBack }) {
                   </button>
                 </div>
                 <div style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--text-muted)' }}>
-                  确定要删除编码 <strong style={{ color: 'var(--text)' }}>{deleteTarget}</strong> 吗？<br/>此操作不可撤销。
+                  确定要删除编码 <strong style={{ color: 'var(--text)' }}>{deleteTarget.code}</strong> 吗？<br/>此操作不可撤销。
                 </div>
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                   <button className="sm-dialog__btn sm-dialog__btn--cancel" onClick={() => setDeleteTarget(null)} disabled={loading}>取消</button>

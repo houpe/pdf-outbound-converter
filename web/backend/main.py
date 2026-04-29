@@ -55,6 +55,20 @@ DOWNLOADS_DIR.mkdir(exist_ok=True)
 
 DB_PATH = BASE_DIR / "split_codes.db"
 
+HEADER_FIELD_LABELS = [
+    "单据编号", "单据状态", "复审状态", "分拣状态", "是否需要推送", "订单日期",
+    "预计发货日期", "期望到货日期", "发货日期", "发货操作时间", "收货机构",
+    "订货机构", "供货机构", "送货机构", "业务模式", "配送重量", "收货人",
+    "收货电话", "收货地址",
+]
+HEADER_LABEL_PATTERN = "|".join(re.escape(label) for label in HEADER_FIELD_LABELS)
+
+
+def _extract_header_value(text: str, label: str) -> str:
+    pattern = rf"{re.escape(label)}[：:]\s*(.*?)(?=\s*(?:{HEADER_LABEL_PATTERN})[：:]|\n|$)"
+    match = re.search(pattern, text)
+    return match.group(1).strip() if match else ""
+
 def get_db():
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -80,8 +94,44 @@ def init_db():
     if 'item_name' not in cols:
         try: conn.execute("ALTER TABLE split_codes ADD COLUMN item_name TEXT")
         except: pass
+    seed_split_codes(conn)
     conn.commit()
     conn.close()
+
+
+def seed_split_codes(conn):
+    """Seed missing split rules from 商品拆零模板.xlsx without overwriting user edits."""
+    if not SPLIT_TEMPLATE.exists():
+        return
+    wb = openpyxl.load_workbook(SPLIT_TEMPLATE, data_only=True, read_only=True)
+    ws = wb.active
+    rows = ws.iter_rows(values_only=True)
+    header = next(rows, None)
+    if not header:
+        wb.close()
+        return
+    labels = [str(v or "").strip() for v in header]
+    try:
+        code_idx = labels.index("商品编码")
+        split_idx = labels.index("是否拆零")
+    except ValueError:
+        wb.close()
+        return
+
+    for row in rows:
+        if not row or len(row) <= max(code_idx, split_idx):
+            continue
+        code = str(row[code_idx] or "").strip()
+        split = str(row[split_idx] or "是").strip()
+        if not code:
+            continue
+        if split not in ("是", "否"):
+            split = "是"
+        conn.execute(
+            "INSERT OR IGNORE INTO split_codes (code, split) VALUES (?, ?)",
+            (code, split),
+        )
+    wb.close()
 
 def get_split_map():
     """Return {code_lower: split} from SQLite"""
@@ -542,20 +592,13 @@ def extract_pdf_data(pdf_path):
 def parse_header(text):
     """Use regex to extract header fields from PDF text."""
     info = {}
-    match = re.search(r"单据编号[：:]\s*(\S+)", text)
-    info["order_no"] = match.group(1) if match else ""
-    match = re.search(r"收货机构[：:]\s*(.+?)(?=\n\s*[^\s：:]+[：:]|$)", text)
-    info["receiver_org"] = match.group(1).strip() if match else ""
-    match = re.search(r"供货机构[：:]\s*(.+?)(?=\n\s*[^\s：:]+[：:]|$)", text)
-    info["supplier_org"] = match.group(1).strip() if match else ""
-    match = re.search(r"收货人[：:]\s*(.+?)(?=\s*收货[电话地址]|[：:]\s*1\d{10}|\n\s*[^\s：:]+[：:]|$)", text)
-    info["receiver_name"] = match.group(1).strip() if match else ""
-    match = re.search(r"收货电话[：:]\s*(\d+)", text)
-    info["receiver_phone"] = match.group(1) if match else ""
-    match = re.search(r"收货地址[：:]\s*(.+?)(?=\n|$)", text)
-    info["receiver_address"] = match.group(1).strip() if match else ""
-    match = re.search(r"订单日期[：:]\s*(\S+)", text)
-    info["order_date"] = match.group(1) if match else ""
+    info["order_no"] = _extract_header_value(text, "单据编号").split()[0] if _extract_header_value(text, "单据编号") else ""
+    info["receiver_org"] = _extract_header_value(text, "收货机构")
+    info["supplier_org"] = _extract_header_value(text, "供货机构")
+    info["receiver_name"] = _extract_header_value(text, "收货人")
+    info["receiver_phone"] = _extract_header_value(text, "收货电话")
+    info["receiver_address"] = _extract_header_value(text, "收货地址")
+    info["order_date"] = _extract_header_value(text, "订单日期").split()[0] if _extract_header_value(text, "订单日期") else ""
     return info
 
 

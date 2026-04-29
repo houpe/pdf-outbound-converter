@@ -68,9 +68,8 @@ function SplitToggle({ value, onChange }) {
   )
 }
 
-function MissingCodesDialog({ codes, onClose, onRetry }) {
-  if (!codes?.length) return null
-  const [items, setItems] = useState(codes.map(c => ({ code: c.code, split: '是', source: c.source })))
+function MissingCodesDialog({ codes = [], onClose, onRetry }) {
+  const [items, setItems] = useState(() => codes.map(c => ({ code: c.code, split: '是', source: c.source })))
   const [loading, setLoading] = useState(false)
 
   const handleSave = async () => {
@@ -374,7 +373,14 @@ export default function App() {
         </footer>
       </div>
 
-      <MissingCodesDialog codes={missingCodes} onClose={() => setMissingCodes(null)} onRetry={handleConvert} />
+      {missingCodes?.length ? (
+        <MissingCodesDialog
+          key={missingCodes.map(c => c.code).join('|')}
+          codes={missingCodes}
+          onClose={() => setMissingCodes(null)}
+          onRetry={handleConvert}
+        />
+      ) : null}
     </div>
   )
 }
