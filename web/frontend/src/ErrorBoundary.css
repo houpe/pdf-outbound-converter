@@ -1,0 +1,41 @@
+.error-boundary {
+  padding: 40px;
+  text-align: center;
+  font-family: system-ui;
+}
+
+.error-boundary__subtitle {
+  color: #666;
+}
+
+.error-boundary__details {
+  margin-top: 16px;
+  text-align: left;
+  max-width: 500px;
+  margin: 16px auto 0;
+}
+
+.error-boundary__summary {
+  cursor: pointer;
+  color: #999;
+}
+
+.error-boundary__trace {
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  overflow: auto;
+  margin-top: 8px;
+}
+
+.error-boundary__btn {
+  margin-top: 20px;
+  padding: 8px 24px;
+  background: #217346;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}

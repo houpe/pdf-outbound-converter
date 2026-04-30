@@ -1,0 +1,43 @@
+{
+  "templates": {
+    "qzz": {
+      "name": "黔寨寨贵州烙锅",
+      "accept": ".pdf",
+      "merchant_code": "Q20260427013"
+    },
+    "lmt": {
+      "name": "黎明屯铁锅炖",
+      "accept": ".xlsx,.xls",
+      "merchant_code": "Q20260427017"
+    },
+    "hlmc": {
+      "name": "欢乐牧场",
+      "accept": ".xlsx,.xls",
+      "merchant_code": "Q20260427015"
+    }
+  },
+  "hlmc_receivers": {
+    "银泰": {
+      "name": "王先生",
+      "phone": "15289437124",
+      "address": "湖北省武汉市武昌区银泰创意城欢乐牧场"
+    },
+    "金银潭": {
+      "name": "白先生",
+      "phone": "18235064843",
+      "address": "湖北省武汉市东西湖区金银潭永旺欢乐牧场"
+    },
+    "金桥": {
+      "name": "张明",
+      "phone": "13382067388",
+      "address": "湖北省武汉市江岸区金桥永旺欢乐牧场"
+    }
+  },
+  "settings": {
+    "max_file_size": 52428800,
+    "max_file_count": 50,
+    "download_ttl_seconds": 86400,
+    "rate_limit_window": 60,
+    "rate_limit_max": 30
+  }
+}

@@ -1,74 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import './SplitManager.css'
+import { IconBack, IconTrash, IconSearch, IconLeft, IconRight, IconPlus, IconX } from './Icons'
+import SplitToggle from './SplitToggle'
 
 const API_BASE = import.meta.env.PROD ? '/wms/api' : '/api'
-
-function IconBack() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-      <path d="M12 4l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  )
-}
-
-function IconTrash() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M3 4h10M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1M6 7v5M10 7v5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M4 4l1 9a1 1 0 001 1h4a1 1 0 001-1l1-9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  )
-}
-
-function IconSearch() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <circle cx="7" cy="7" r="4" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M10 10l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  )
-}
-
-function IconLeft() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  )
-}
-
-function IconRight() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  )
-}
-
-function IconPlus() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-      <path d="M7 3v8M3 7h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-    </svg>
-  )
-}
-
-function IconX() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-      <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-    </svg>
-  )
-}
-
-function SplitToggle({ value, onChange }) {
-  return (
-    <div className="sm-toggle">
-      <button type="button" className={`sm-toggle__btn ${value === '是' ? 'active' : ''}`} onClick={() => onChange('是')}>拆零</button>
-      <button type="button" className={`sm-toggle__btn ${value === '否' ? 'active' : ''}`} onClick={() => onChange('否')}>不拆零</button>
-    </div>
-  )
-}
 
 function formatDateTime(iso) {
   if (!iso) return '-'
@@ -170,7 +105,7 @@ export default function SplitManager({ onBack }) {
       flashMsg('已删除', 'success')
       fetchCodes()
     } catch { flashMsg('请求失败', 'error') }
-    finally { 
+    finally {
       setLoading(false)
       setDeleteTarget(null)
     }
@@ -320,18 +255,18 @@ export default function SplitManager({ onBack }) {
           <div className="sm-dialog__container">
             <div className="sm-dialog__wrapper">
               <div className="sm-dialog__panel">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text)' }}>确认删除</h3>
-                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }} onClick={() => setDeleteTarget(null)} disabled={loading}>
+                <div className="sm-dialog__header-row">
+                  <h3 className="sm-dialog__title">确认删除</h3>
+                  <button className="sm-dialog__close" onClick={() => setDeleteTarget(null)} disabled={loading}>
                     <IconX />
                   </button>
                 </div>
-                <div style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--text-muted)' }}>
-                  确定要删除编码 <strong style={{ color: 'var(--text)' }}>{deleteTarget.code}</strong> 吗？<br/>此操作不可撤销。
+                <div className="sm-dialog__message">
+                  确定要删除编码 <strong className="sm-dialog__strong">{deleteTarget.code}</strong> 吗？<br/>此操作不可撤销。
                 </div>
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <div className="sm-dialog__footer">
                   <button className="sm-dialog__btn sm-dialog__btn--cancel" onClick={() => setDeleteTarget(null)} disabled={loading}>取消</button>
-                  <button className="sm-dialog__btn sm-dialog__btn--save" style={{ background: '#EF4444' }} onClick={handleConfirmDelete} disabled={loading}>
+                  <button className="sm-dialog__btn sm-dialog__btn--delete" onClick={handleConfirmDelete} disabled={loading}>
                     {loading ? '删除中...' : '确认删除'}
                   </button>
                 </div>

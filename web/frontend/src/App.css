@@ -5,6 +5,11 @@
   overflow-x: hidden;
 }
 
+.app-loading {
+  padding: 40px;
+  text-align: center;
+}
+
 .bg-decoration {
   position: fixed;
   inset: 0;
@@ -580,4 +585,38 @@
 
 .missing-dialog__btn--primary:hover {
   background: var(--primary-hov, #4356c6);
+}
+
+/* Missing Codes Dialog - Code row styles */
+.missing-dialog__codes--scroll {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.missing-dialog__code-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.missing-dialog__code-row:last-child {
+  margin-bottom: 0;
+}
+
+.missing-dialog__code {
+  font-weight: 700;
+  color: #D97706;
+  font-size: 14px;
+  font-family: var(--font-mono, 'Menlo', 'Consolas', monospace);
+}
+
+.missing-dialog__source {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
 }

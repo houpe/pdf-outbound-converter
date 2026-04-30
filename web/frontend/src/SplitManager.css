@@ -471,3 +471,46 @@
   .sm-pagination__info { text-align: center; }
   .sm-pagination__group { justify-content: center; }
 }
+
+/* Delete Dialog Styles */
+.sm-dialog__header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.sm-dialog__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sm-dialog__close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+}
+
+.sm-dialog__message {
+  margin-bottom: 24px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.sm-dialog__footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.sm-dialog__btn--delete {
+  background: #EF4444;
+}
+
+.sm-dialog__strong {
+  color: var(--text);
+}

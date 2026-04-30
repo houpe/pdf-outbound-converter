@@ -1,0 +1,11 @@
+# Development dependencies for WMS conversion tool
+
+# Testing framework
+pytest>=7.0
+pytest-cov>=4.0
+
+# HTTP client for testing FastAPI
+httpx>=0.24
+
+# Coverage reporting
+coverage>=7.0
