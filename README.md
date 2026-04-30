@@ -9,9 +9,11 @@
 - 🔀 **商品拆零路由**: 根据 SQLite 拆零配置自动将数量分配到二级单位或最小单位
 - 🧩 **商品拆零管理**: 支持页面内直接新增/编辑编码、切换是否拆零、保存到数据库、查看创建时间、确认删除
 - 📝 **转换日志**: 每次转换自动记录（JSONL格式），可通过 `/api/logs` 查询统计
+- 🛡️ **API限流**: 自动限制请求频率，防止滥用
 - ⬇️ **自动下载**: 转换完成后自动下载结果文件
 - 🖥️ **Web界面**: 基于React + Vite，支持拖拽上传
 - ⚡ **异步处理**: FastAPI后端高效处理转换
+- 🧪 **测试覆盖**: 70+ pytest 测试用例覆盖解析/转换/CRUD/限流
 - 🌐 **远程访问**: 支持多人同时使用
 
 ## 支持的模板
@@ -68,19 +70,43 @@
 ```
 wms表格转换2/
 ├── web/                    # Web应用
-│   ├── backend/            # FastAPI后端
-│   │   ├── main.py         # 后端主程序（转换逻辑）
-│   │   ├── requirements.txt# Python依赖
+│   ├── backend/            # FastAPI后端（模块化架构）
+│   │   ├── main.py         # 路由入口（仅保留路由注册）
+│   │   ├── config.py       # 配置常量（模板/路径/限流/CORS）
+│   │   ├── config.json     # 可编辑配置文件
+│   │   ├── database.py     # SQLite数据库操作
+│   │   ├── schemas.py      # Pydantic数据模型
+│   │   ├── parsers/        # 解析器模块
+│   │   │   ├── base.py             # 通用解析辅助函数
+│   │   │   ├── pdf_parser.py       # 黔寨寨PDF解析
+│   │   │   ├── excel_parser_lmt.py # 黎明屯Excel解析
+│   │   │   └── excel_parser_hlmc.py# 欢乐牧场Excel解析
+│   │   ├── services/       # 业务服务
+│   │   │   ├── conversion.py       # 转换核心逻辑
+│   │   │   └── logging_svc.py      # 转换日志服务
+│   │   ├── middleware/     # 中间件
+│   │   │   └── rate_limit.py       # API限流
+│   │   ├── tests/          # 测试套件（70+用例）
+│   │   ├── pytest.ini      # pytest配置
+│   │   ├── requirements.txt# Python运行依赖
 │   │   ├── uploads/        # 上传临时目录
 │   │   ├── downloads/      # 下载结果目录
-│   │   ├── split_codes.db  # 商品拆零 SQLite 数据库（运行时生成）
+│   │   ├── split_codes.db  # 商品拆零SQLite数据库（运行时生成）
 │   │   └── conversion_log.jsonl  # 转换日志
 │   └── frontend/           # React+Vite前端
+│       ├── src/
+│       │   ├── App.jsx / App.css
+│       │   ├── SplitManager.jsx / SplitManager.css
+│       │   ├── ErrorBoundary.jsx / ErrorBoundary.css
+│       │   ├── SplitToggle.jsx     # 共享拆零切换组件
+│       │   └── Icons.jsx           # 共享图标组件集合
+│       └── ...
 ├── templates/              # Excel模板文件
 │   ├── OMS出库.xlsx        # 输出模板
 │   ├── 商品拆零模板.xlsx    # 历史配置模板（当前运行逻辑不读取）
 │   ├── 黎明屯铁锅炖模板.xlsx
 │   └── 欢乐牧场模板.xlsx
+├── requirements-dev.txt    # 开发依赖（pytest/httpx/coverage）
 └── README.md
 ```
 
@@ -100,6 +126,16 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 cd web/frontend
 npm install
 npm run dev
+```
+
+### 测试
+
+```bash
+cd web/backend
+pip install -r ../../requirements-dev.txt  # 安装开发依赖
+python3 -m pytest tests/ -v                 # 运行全部测试
+python3 -m pytest tests/ -v --tb=short      # 简洁输出
+python3 -m pytest tests/ --cov=.            # 覆盖率报告
 ```
 
 ## 部署（服务器）
@@ -124,8 +160,11 @@ WMS_FRONT_PATH="${WMS_FRONT_PATH:-/www/wwwroot/address-weight-calc/wms}"
 # 1. 构建前端
 cd web/frontend && npm run build
 
-# 2. 部署后端
-scp ../../web/backend/main.py "$WMS_SERVER:$WMS_API_PATH/main.py"
+# 2. 部署后端（模块化后的全部文件）
+scp -r ../../web/backend/config.py ../../web/backend/config.json ../../web/backend/database.py ../../web/backend/schemas.py ../../web/backend/main.py ../../web/backend/requirements.txt "$WMS_SERVER:$WMS_API_PATH/"
+scp -r ../../web/backend/parsers/ "$WMS_SERVER:$WMS_API_PATH/parsers/"
+scp -r ../../web/backend/services/ "$WMS_SERVER:$WMS_API_PATH/services/"
+scp -r ../../web/backend/middleware/ "$WMS_SERVER:$WMS_API_PATH/middleware/"
 
 # 3. 部署前端
 scp -r ./dist/* "$WMS_SERVER:$WMS_FRONT_PATH/"
@@ -139,7 +178,7 @@ ssh "$WMS_SERVER" "pm2 restart wms-api && echo ✅ done"
 从项目 `web/frontend` 目录执行：
 
 ```bash
-WMS_SERVER="${WMS_SERVER:-root@your-server.com}" && npm run build && scp -r dist/* "$WMS_SERVER:/www/wwwroot/address-weight-calc/wms/" && scp ../../web/backend/main.py "$WMS_SERVER:/www/wwwroot/wms-api/main.py" && ssh "$WMS_SERVER" 'pm2 restart wms-api && echo ✅ done'
+WMS_SERVER="${WMS_SERVER:-root@your-server.com}" && npm run build && scp -r dist/* "$WMS_SERVER:/www/wwwroot/address-weight-calc/wms/" && scp ../../web/backend/*.py ../../web/backend/*.json ../../web/backend/*.txt "$WMS_SERVER:/www/wwwroot/wms-api/" && scp -r ../../web/backend/parsers ../../web/backend/services ../../web/backend/middleware "$WMS_SERVER:/www/wwwroot/wms-api/" && ssh "$WMS_SERVER" 'pm2 restart wms-api && echo ✅ done'
 ```
 
 ### PM2 启动方式
@@ -210,6 +249,7 @@ cat web/backend/conversion_log.jsonl | jq .
 
 ## 版本历史
 
+- v3.6 - 后端模块化重构：拆分单文件为 config/database/schemas/parsers/services/middleware；前端提取共享 Icons/SplitToggle 组件，内联样式迁移到 CSS；新增 70+ pytest 测试套件；启用 API 限流，收紧 CORS 策略
 - v3.5 - 商品拆零配置改为 SQLite 页面维护；拆零管理支持内联新增/编辑/保存、创建时间倒序、页面内确认删除；黎明屯缺失编码支持弹窗内配置并重试；仅黎明屯转换校验拆零配置
 - v3.4 - 修复拆零路由：新增模板回退查找逻辑；LMT门店信息从模板「收货机构」读取
 - v3.3 - 新增转换日志（JSONL）、拆零模板自动路由、转换成功后自动下载
