@@ -14,6 +14,164 @@ const FALLBACK_TEMPLATES = {
   hlmc: { name: '欢乐牧场',       accept: '.xlsx,.xls' },
 }
 
+const CURRENT_VERSION = 'v3.7'
+
+const VERSION_HISTORY = [
+  {
+    version: 'v3.7',
+    date: '2025-05-01 22:30',
+    changes: [
+      '首页增加版本号徽章，点击即可查看完整更新记录弹窗',
+      '修复欢乐牧场模板中无商品编码/名称的行被错误转换的问题',
+    ],
+  },
+  {
+    version: 'v3.6',
+    date: '2026-04-29 18:58',
+    changes: [
+      '后端模块化重构：拆分单文件为 config/database/schemas/parsers/services/middleware',
+      '前端提取共享 Icons/SplitToggle 组件，内联样式迁移到 CSS',
+      '新增 70+ pytest 测试套件覆盖解析/转换/CRUD/限流',
+      '启用 API 限流，收紧 CORS 策略',
+    ],
+  },
+  {
+    version: 'v3.5',
+    date: '2025-05-01 12:00',
+    changes: [
+      '商品拆零配置改为 SQLite 页面维护',
+      '拆零管理支持内联新增/编辑/保存、创建时间倒序、页面内确认删除',
+      '黎明屯缺失编码支持弹窗内配置并重试',
+      '仅黎明屯转换校验拆零配置',
+    ],
+  },
+  {
+    version: 'v3.4',
+    date: '2025-04-28 16:54',
+    changes: [
+      '修复拆零路由：新增模板回退查找逻辑',
+      'LMT门店信息从模板「收货机构」读取',
+    ],
+  },
+  {
+    version: 'v3.3',
+    date: '2025-04-28 12:00',
+    changes: [
+      '新增转换日志（JSONL）、拆零模板自动路由',
+      '转换成功后自动下载',
+    ],
+  },
+  {
+    version: 'v3.2',
+    date: '2025-04-28 10:00',
+    changes: [
+      '安全加固：路径遍历防护、lifespan 替换废弃 API',
+      '清理端点移除、requirements 合并',
+    ],
+  },
+  {
+    version: 'v3.1',
+    date: '2025-04-27 18:00',
+    changes: [
+      'CORS 限定来源、动态模板获取',
+      '流式上传、TTL 清理、文件限制',
+    ],
+  },
+  {
+    version: 'v3.0',
+    date: '2025-04-27 14:00',
+    changes: [
+      '重构为Web应用（FastAPI + React），删除桌面端代码',
+    ],
+  },
+  {
+    version: 'v2.3',
+    date: '2025-04-25 10:00',
+    changes: [
+      '重构项目目录 (src/assets/templates)，欢乐牧场合并输出',
+    ],
+  },
+  {
+    version: 'v2.2',
+    date: '2025-04-24 16:00',
+    changes: [
+      '新增欢乐牧场模板',
+    ],
+  },
+  {
+    version: 'v2.1',
+    date: '2025-04-24 10:00',
+    changes: [
+      '新增黎明屯铁锅炖模板',
+    ],
+  },
+  {
+    version: 'v2.0',
+    date: '2025-04-23 15:00',
+    changes: [
+      '多模板下拉选择器',
+    ],
+  },
+  {
+    version: 'v1.3',
+    date: '2025-04-20 10:00',
+    changes: [
+      '优化异步处理和日志显示',
+    ],
+  },
+  {
+    version: 'v1.2',
+    date: '2025-04-18 12:00',
+    changes: [
+      '双平台打包支持',
+    ],
+  },
+  {
+    version: 'v1.1',
+    date: '2025-04-15 09:00',
+    changes: [
+      'GUI界面',
+    ],
+  },
+  {
+    version: 'v1.0',
+    date: '2025-04-10 08:00',
+    changes: [
+      '基础PDF转Excel',
+    ],
+  },
+]
+
+function VersionModal({ version, onClose }) {
+  if (!version) return null
+  return (
+    <div className="version-overlay" onClick={onClose}>
+      <div className="version-modal" onClick={e => e.stopPropagation()}>
+        <div className="version-modal__header">
+          <h3>版本更新记录</h3>
+          <button className="version-modal__close" onClick={onClose}>✕</button>
+        </div>
+        <div className="version-modal__body">
+          {VERSION_HISTORY.map(v => (
+            <div key={v.version} className={`version-entry ${v.version === CURRENT_VERSION ? 'current' : ''}`}>
+              <div className="version-entry__header">
+                <div className="version-entry__version">
+                  <span className={`version-tag ${v.version === CURRENT_VERSION ? 'current' : ''}`}>{v.version}</span>
+                  <span className="version-date">{v.date}</span>
+                </div>
+                {v.version === CURRENT_VERSION && <span className="version-badge-latest">当前</span>}
+              </div>
+              <ul className="version-entry__changes">
+                {v.changes.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const getAcceptExts = (accept) => accept.split(',').map(s => s.trim())
 
 function MissingCodesDialog({ codes = [], onClose, onRetry }) {
@@ -83,6 +241,7 @@ export default function App() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [logLines, setLogLines] = useState([])
   const [missingCodes, setMissingCodes] = useState(null)
+  const [versionShow, setVersionShow] = useState(false)
   const fileInputRef = useRef(null)
 
   // Fetch templates from backend on mount
@@ -217,7 +376,10 @@ export default function App() {
 
       <div className="app-inner">
         <header className="app-header fade-in-up">
-          <div className="logo-badge"><IconSparkle /><span>出库单转换</span></div>
+          <div className="header-badges">
+            <div className="logo-badge"><IconSparkle /><span>出库单转换</span></div>
+            <button className="version-badge" onClick={() => setVersionShow(true)} type="button">{CURRENT_VERSION}</button>
+          </div>
           <h1 className="app-title">PDF/Excel 出库单 <em>转 Excel</em></h1>
           <p className="app-subtitle">选择模板，上传文件，一键生成标准 OMS 出库表格</p>
         </header>
@@ -329,6 +491,8 @@ export default function App() {
           onRetry={handleConvert}
         />
       ) : null}
+
+      {versionShow && <VersionModal version={CURRENT_VERSION} onClose={() => setVersionShow(false)} />}
     </div>
   )
 }

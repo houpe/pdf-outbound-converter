@@ -74,6 +74,11 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
     while r <= ws.max_row:
         sku_name = ws.cell(row=r, column=col_sku_name).value if col_sku_name else ""
         ext_code = ws.cell(row=r, column=col_ext_code).value if col_ext_code else ""
+
+        if not sku_name and not ext_code:
+            r += 1
+            continue
+
         sku_unit = str(ws.cell(row=r, column=col_unit).value or "").strip() if col_unit else ""
         sku_spec = str(ws.cell(row=r, column=col_sku_spec).value or "").strip() if col_sku_spec else ""
 
