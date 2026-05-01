@@ -34,6 +34,7 @@ export function normalizeApiError(err, opts = {}) {
     (typeof data === 'string' && data) ||
     data?.error ||
     data?.message ||
+    (typeof data?.detail?.message === 'string' ? data.detail.message : '') ||
     (typeof data?.detail === 'string' ? data.detail : '') ||
     e?.message ||
     fallbackMessage
@@ -54,4 +55,3 @@ export function normalizeApiError(err, opts = {}) {
     raw: err,
   }
 }
-
