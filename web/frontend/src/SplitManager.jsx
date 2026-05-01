@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import './SplitManager.css'
 import { IconBack, IconTrash, IconSearch, IconLeft, IconRight, IconPlus } from './Icons'
 import SplitToggle from './SplitToggle'
@@ -19,15 +19,89 @@ function formatDateTime(iso) {
   })
 }
 
+function tableReducer(state, action) {
+  switch (action.type) {
+    case 'set_all': {
+      return {
+        ...state,
+        rows: action.rows,
+        pending: new Set(),
+        addRowVisible: false,
+      }
+    }
+    case 'update_cell': {
+      const nextRows = state.rows.map(r => (r.id === action.id ? { ...r, [action.field]: action.value } : r))
+      const nextRow = nextRows.find(r => r.id === action.id)
+
+      const nextPending = new Set(state.pending)
+      if (!nextRow) return { ...state, rows: nextRows, pending: nextPending }
+
+      if (nextRow.isNew) {
+        nextPending.add(action.id)
+        return { ...state, rows: nextRows, pending: nextPending }
+      }
+
+      const baseline = action.baseline
+      const baselineCode = baseline?.code ?? ''
+      const baselineSplit = baseline?.split
+      const isDirty = !baseline
+        || (nextRow.code ?? '') !== baselineCode
+        || nextRow.split !== baselineSplit
+
+      if (isDirty) nextPending.add(action.id)
+      else nextPending.delete(action.id)
+
+      return { ...state, rows: nextRows, pending: nextPending }
+    }
+    case 'add_row': {
+      const nextPending = new Set(state.pending)
+      nextPending.add(action.row.id)
+      return {
+        ...state,
+        rows: [action.row, ...state.rows],
+        pending: nextPending,
+        addRowVisible: true,
+      }
+    }
+    case 'remove_row': {
+      const nextPending = new Set(state.pending)
+      nextPending.delete(action.id)
+      return {
+        ...state,
+        rows: state.rows.filter(r => r.id !== action.id),
+        pending: nextPending,
+        addRowVisible: action.hideAddRowVisible ? false : state.addRowVisible,
+      }
+    }
+    case 'discard': {
+      return {
+        ...state,
+        rows: action.rows,
+        pending: new Set(),
+        addRowVisible: false,
+      }
+    }
+    default:
+      return state
+  }
+}
+
 export default function SplitManager({ onBack }) {
-  const [rows, setRows] = useState([])
+  const [tableState, dispatch] = useReducer(tableReducer, {
+    rows: [],
+    pending: new Set(),
+    addRowVisible: false,
+  })
+
+  const rows = tableState.rows
+  const pending = tableState.pending
+  const addRowVisible = tableState.addRowVisible
+
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [splitFilter, setSplitFilter] = useState('全部')
 
-  const [pending, setPending] = useState(new Set())
   const [backConfirmOpen, setBackConfirmOpen] = useState(false)
-  const [addRowVisible, setAddRowVisible] = useState(false)
   const newInputRef = useRef(null)
 
   const baselineRowsRef = useRef([])
@@ -47,9 +121,7 @@ export default function SplitManager({ onBack }) {
         baselineByIdRef.current = new Map(
           nextRows.map(r => [r.id, { code: r.code ?? '', split: r.split }]),
         )
-        setRows(nextRows)
-        setPending(new Set())
-        setAddRowVisible(false)
+        dispatch({ type: 'set_all', rows: nextRows })
       })
       .catch(() => notify('获取列表失败', 'danger'))
   }, [notify])
@@ -57,38 +129,17 @@ export default function SplitManager({ onBack }) {
   useEffect(() => { fetchCodes() }, [fetchCodes])
 
   const updateCell = useCallback((id, field, value) => {
-    setRows(prevRows => {
-      const nextRows = prevRows.map(r => (r.id === id ? { ...r, [field]: value } : r))
-      const nextRow = nextRows.find(r => r.id === id)
-
-      setPending(prevPending => {
-        const nextPending = new Set(prevPending)
-        if (!nextRow) return nextPending
-        if (nextRow.isNew) {
-          nextPending.add(id)
-          return nextPending
-        }
-
-        const baseline = baselineByIdRef.current.get(id)
-        const baselineCode = baseline?.code ?? ''
-        const baselineSplit = baseline?.split
-        const isDirty = !baseline
-          || (nextRow.code ?? '') !== baselineCode
-          || nextRow.split !== baselineSplit
-
-        if (isDirty) nextPending.add(id)
-        else nextPending.delete(id)
-        return nextPending
-      })
-
-      return nextRows
+    dispatch({
+      type: 'update_cell',
+      id,
+      field,
+      value,
+      baseline: baselineByIdRef.current.get(id),
     })
   }, [])
 
   const discardChanges = useCallback(() => {
-    setRows(baselineRowsRef.current)
-    setPending(new Set())
-    setAddRowVisible(false)
+    dispatch({ type: 'discard', rows: baselineRowsRef.current })
     notify('已放弃未保存更改', 'info')
   }, [notify])
 
@@ -131,13 +182,7 @@ export default function SplitManager({ onBack }) {
 
     // new row: local remove only
     if (deleteTarget.isNew) {
-      setRows(prev => prev.filter(r => r.id !== deleteTarget.id))
-      setPending(prev => {
-        const next = new Set(prev)
-        next.delete(deleteTarget.id)
-        return next
-      })
-      setAddRowVisible(false)
+      dispatch({ type: 'remove_row', id: deleteTarget.id, hideAddRowVisible: true })
       setDeleteTarget(null)
       notify('已移除未保存的记录', 'info')
       return
@@ -151,7 +196,10 @@ export default function SplitManager({ onBack }) {
         return
       }
       notify('已删除', 'success')
-      fetchCodes()
+      const deletedId = deleteTarget.id
+      baselineRowsRef.current = baselineRowsRef.current.filter(r => r.id !== deletedId)
+      baselineByIdRef.current.delete(deletedId)
+      dispatch({ type: 'remove_row', id: deletedId })
     } catch { notify('请求失败', 'danger') }
     finally {
       setLoading(false)
@@ -161,9 +209,7 @@ export default function SplitManager({ onBack }) {
 
   const addNewRow = () => {
     const id = `_new_${Date.now()}`
-    setRows(prev => [{ id, code: '', split: '是', created_at: '', isNew: true }, ...prev])
-    setAddRowVisible(true)
-    setPending(prev => new Set(prev).add(id))
+    dispatch({ type: 'add_row', row: { id, code: '', split: '是', created_at: '', isNew: true } })
     setTimeout(() => newInputRef.current?.focus(), 50)
   }
 
@@ -204,6 +250,7 @@ export default function SplitManager({ onBack }) {
           size="sm"
           onClick={() => (pendingCount > 0 ? setBackConfirmOpen(true) : onBack())}
           type="button"
+          disabled={loading}
         >
           <IconBack /> 返回转换
         </Button>
@@ -221,6 +268,7 @@ export default function SplitManager({ onBack }) {
             placeholder="搜索商品编码…"
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
+            disabled={loading}
           />
         </div>
         <div className="sm-toolbar__controls">
@@ -229,6 +277,7 @@ export default function SplitManager({ onBack }) {
             value={splitFilter}
             onChange={e => { setSplitFilter(e.target.value); setPage(1) }}
             aria-label="拆零筛选"
+            disabled={loading}
           >
             <option value="全部">全部规则</option>
             <option value="拆零">拆零</option>
@@ -241,6 +290,7 @@ export default function SplitManager({ onBack }) {
               value={pageSize}
               onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
               aria-label="每页条数"
+              disabled={loading}
             >
               <option value={10}>10</option>
               <option value={20}>20</option>
@@ -255,7 +305,7 @@ export default function SplitManager({ onBack }) {
             size="sm"
             onClick={addNewRow}
             type="button"
-            disabled={addRowVisible}
+            disabled={loading || addRowVisible}
           >
             <IconPlus /> 新增
           </Button>
@@ -265,7 +315,7 @@ export default function SplitManager({ onBack }) {
             onClick={saveAll}
             type="button"
             loading={loading}
-            disabled={pendingCount === 0}
+            disabled={loading || pendingCount === 0}
           >
             保存{pendingCount > 0 ? ` (${pendingCount})` : ''}
           </Button>
@@ -301,12 +351,13 @@ export default function SplitManager({ onBack }) {
                               value={displayCode}
                               onChange={e => updateCell(r.id, 'code', e.target.value)}
                               placeholder="输入商品编码"
-                              onKeyDown={e => e.key === 'Enter' && saveAll()}
+                              onKeyDown={e => e.key === 'Enter' && !loading && saveAll()}
+                              disabled={loading}
                             />
                           </div>
                         </td>
                         <td>
-                          <SplitToggle value={r.split} onChange={val => updateCell(r.id, 'split', val)} />
+                          <SplitToggle value={r.split} onChange={val => updateCell(r.id, 'split', val)} disabled={loading} />
                         </td>
                         <td className="sm-time">{r.created_at ? formatDateTime(r.created_at) : '—'}</td>
                         <td className="sm-cell-actions">
@@ -318,6 +369,7 @@ export default function SplitManager({ onBack }) {
                             type="button"
                             aria-label="删除"
                             title="删除"
+                            disabled={loading}
                           >
                             <IconTrash />
                             <span className="ui-sr-only">删除</span>
@@ -340,7 +392,7 @@ export default function SplitManager({ onBack }) {
                     size="sm"
                     className="sm-page-btn"
                     onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage <= 1}
+                    disabled={loading || currentPage <= 1}
                     type="button"
                   >
                     <IconLeft />
@@ -354,7 +406,7 @@ export default function SplitManager({ onBack }) {
                     size="sm"
                     className="sm-page-btn"
                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage >= totalPages}
+                    disabled={loading || currentPage >= totalPages}
                     type="button"
                   >
                     <IconRight />
@@ -377,7 +429,7 @@ export default function SplitManager({ onBack }) {
             <Button variant="secondary" size="sm" type="button" onClick={discardChanges} disabled={loading}>
               放弃更改
             </Button>
-            <Button variant="primary" size="sm" type="button" onClick={saveAll} loading={loading}>
+            <Button variant="primary" size="sm" type="button" onClick={saveAll} loading={loading} disabled={loading}>
               保存更改
             </Button>
           </div>
@@ -386,12 +438,12 @@ export default function SplitManager({ onBack }) {
 
       <Modal
         open={backConfirmOpen}
-        onClose={() => !loading && setBackConfirmOpen(false)}
+        onClose={() => setBackConfirmOpen(false)}
         title="确认返回"
         closeLabel="关闭"
         footer={(
           <>
-            <Button variant="secondary" type="button" onClick={() => setBackConfirmOpen(false)} disabled={loading}>
+            <Button variant="secondary" type="button" onClick={() => setBackConfirmOpen(false)}>
               取消
             </Button>
             <Button
@@ -414,12 +466,12 @@ export default function SplitManager({ onBack }) {
 
       <Modal
         open={Boolean(deleteTarget)}
-        onClose={() => !loading && setDeleteTarget(null)}
+        onClose={() => setDeleteTarget(null)}
         title={deleteTitle}
         closeLabel="关闭"
         footer={(
           <>
-            <Button variant="secondary" type="button" onClick={() => setDeleteTarget(null)} disabled={loading}>
+            <Button variant="secondary" type="button" onClick={() => setDeleteTarget(null)}>
               取消
             </Button>
             <Button
