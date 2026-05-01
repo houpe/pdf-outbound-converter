@@ -20,8 +20,15 @@ function ProgressBlock({ progress }) {
   )
 }
 
-export default function StatusPanel({ templateName, progress, result, onDownload }) {
+function formatDuration(ms) {
+  if (ms == null) return null
+  if (ms < 1000) return `${ms} ms`
+  return `${(ms / 1000).toFixed(2)} s`
+}
+
+export default function StatusPanel({ templateName, progress, result, durationMs, onDownload }) {
   const downloadUrl = result?.filename ? `${DOWNLOAD_BASE}/${result.filename}` : null
+  const durationText = formatDuration(durationMs)
 
   return (
     <section className="convert-panel convert-status-panel">
@@ -45,10 +52,14 @@ export default function StatusPanel({ templateName, progress, result, onDownload
             </div>
             <div className="convert-result-card__body">
               <div className="convert-result-row"><span>模板</span><strong>{templateName}</strong></div>
+              <div className="convert-result-row"><span>文件数</span><strong>{result.parsed_files ?? '-'} 个</strong></div>
               <div className="convert-result-row"><span>涉及店铺</span><strong>{result.store_count} 个</strong></div>
               <div className="convert-result-row"><span>商品合计</span><strong>{result.total_quantity} 件</strong></div>
               <div className="convert-result-row"><span>记录数</span><strong>{result.item_count} 条</strong></div>
               <div className="convert-result-row"><span>文件</span><strong className="filename">{result.filename}</strong></div>
+              {durationText ? (
+                <div className="convert-result-row"><span>耗时</span><strong>{durationText}</strong></div>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -63,4 +74,3 @@ export default function StatusPanel({ templateName, progress, result, onDownload
     </section>
   )
 }
-

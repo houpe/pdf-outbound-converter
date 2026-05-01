@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import SplitManager from '../../SplitManager'
 import { IconDownload, IconSparkle } from '../../Icons'
 import { apiClient, DOWNLOAD_BASE } from '../../lib/apiClient'
 import './convert.css'
@@ -156,8 +155,7 @@ function VersionModal({ onClose }) {
 
 const getAcceptExts = (accept) => accept.split(',').map(s => s.trim())
 
-export default function ConvertPage() {
-  const [view, setView] = useState('convert')
+export default function ConvertPage({ onOpenSplit }) {
   const [templates, setTemplates] = useState(FALLBACK_TEMPLATES)
   const [templateKey, setTemplateKey] = useState('qzz')
   const [files, setFiles] = useState([])
@@ -166,6 +164,7 @@ export default function ConvertPage() {
   const [logLines, setLogLines] = useState([])
   const [missingCodes, setMissingCodes] = useState(null)
   const [versionShow, setVersionShow] = useState(false)
+  const [durationMs, setDurationMs] = useState(null)
 
   const addLine = useCallback((msg, type = 'info') => {
     setLogLines(prev => [
@@ -185,7 +184,7 @@ export default function ConvertPage() {
         const firstKey = res.data.templates[0]?.key
         if (firstKey) setTemplateKey(firstKey)
       })
-      .catch(() => addLine('⚠️ 无法获取模板列表，使用本地缓存', 'warn'))
+      .catch(() => addLine('⚠️ 无法获取模板列表，使用内置模板列表', 'warn'))
   }, [addLine])
 
   const template = templates[templateKey] || FALLBACK_TEMPLATES[templateKey]
@@ -197,6 +196,7 @@ export default function ConvertPage() {
     setResult(null)
     setLogLines([])
     setProgress(null)
+    setDurationMs(null)
   }
 
   const checkExt = useCallback((f) => {
@@ -232,19 +232,23 @@ export default function ConvertPage() {
     setProgress({ status: 'uploading', message: `正在上传 ${files.length} 个文件...` })
     addLine(`📤 开始上传 ${files.length} 个文件...`, 'info')
     setResult(null)
+    setDurationMs(null)
 
     const fd = new FormData()
     files.forEach(f => fd.append('files', f))
     fd.append('template_key', templateKey)
 
+    let t0 = null
     try {
       addLine('🔄 正在转换...', 'info')
       setProgress({ status: 'converting', message: '正在转换数据...' })
+      t0 = Date.now()
 
       const res = await apiClient.post('/convert', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 120_000,
       })
+      setDurationMs(Date.now() - t0)
 
       if (res.data.success) {
         setProgress({ status: 'done', message: '转换完成!' })
@@ -269,6 +273,7 @@ export default function ConvertPage() {
       }
     } catch (e) {
       setProgress(null)
+      if (t0 != null) setDurationMs(Date.now() - t0)
 
       // 保留：缺失编码弹窗保存并重试
       if (Array.isArray(e?.codes) && e.codes.length) {
@@ -286,10 +291,6 @@ export default function ConvertPage() {
   const handleDownload = () => {
     if (!result?.filename) return
     window.open(`${DOWNLOAD_BASE}/${result.filename}`, '_blank')
-  }
-
-  if (view === 'split') {
-    return <SplitManager onBack={() => setView('convert')} />
   }
 
   if (!template) return <div className="app-loading">加载中...</div>
@@ -356,6 +357,7 @@ export default function ConvertPage() {
               templateName={template.name}
               progress={progress}
               result={result}
+              durationMs={durationMs}
               onDownload={handleDownload}
             />
             <div style={{ height: 12 }} aria-hidden="true" />
@@ -366,7 +368,7 @@ export default function ConvertPage() {
         <footer className="convert-footer">
           <span>出库单转换工具</span><span className="footer-dot">·</span><span>Powered by WMS Converter</span>
           <span className="footer-dot">·</span>
-          <button className="footer-link" onClick={() => setView('split')} type="button">拆零管理</button>
+          <button className="footer-link" onClick={onOpenSplit} type="button">拆零管理</button>
         </footer>
       </div>
 
