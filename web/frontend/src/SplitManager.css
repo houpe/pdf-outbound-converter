@@ -127,6 +127,12 @@
   border-collapse: collapse;
 }
 
+.sm-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .sm-table th {
   text-align: left;
   padding: 12px 16px;
@@ -381,9 +387,6 @@
 @media (max-width: 640px) {
   .split-manager { padding: var(--space-3); }
 
-  .sm-table th:nth-child(2),
-  .sm-table td:nth-child(2) { display: none; }
-
   .sm-header__badge { display: none; }
 
   .sm-toolbar { flex-direction: column; align-items: stretch; }
@@ -393,6 +396,8 @@
   .sm-pagination { flex-direction: column; gap: 12px; align-items: stretch; }
   .sm-pagination__info { text-align: center; }
   .sm-pagination__group { justify-content: center; }
+
+  .sm-table { min-width: 680px; }
 
   .sm-dirtybar {
     bottom: var(--space-3);

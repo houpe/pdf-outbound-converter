@@ -26,10 +26,12 @@ export default function SplitManager({ onBack }) {
   const [splitFilter, setSplitFilter] = useState('全部')
 
   const [pending, setPending] = useState(new Set())
+  const [backConfirmOpen, setBackConfirmOpen] = useState(false)
   const [addRowVisible, setAddRowVisible] = useState(false)
   const newInputRef = useRef(null)
 
   const baselineRowsRef = useRef([])
+  const baselineByIdRef = useRef(new Map())
   const { toasts, pushToast, dismissToast } = useToast({ duration: 3000, limit: 3 })
 
   const notify = useCallback((message, variant = 'info') => {
@@ -42,6 +44,9 @@ export default function SplitManager({ onBack }) {
       .then(data => {
         const nextRows = (data.codes || []).map(row => ({ ...row, id: row.code, isNew: false }))
         baselineRowsRef.current = nextRows
+        baselineByIdRef.current = new Map(
+          nextRows.map(r => [r.id, { code: r.code ?? '', split: r.split }]),
+        )
         setRows(nextRows)
         setPending(new Set())
         setAddRowVisible(false)
@@ -51,10 +56,34 @@ export default function SplitManager({ onBack }) {
 
   useEffect(() => { fetchCodes() }, [fetchCodes])
 
-  const updateCell = (id, field, value) => {
-    setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r))
-    setPending(prev => new Set(prev).add(id))
-  }
+  const updateCell = useCallback((id, field, value) => {
+    setRows(prevRows => {
+      const nextRows = prevRows.map(r => (r.id === id ? { ...r, [field]: value } : r))
+      const nextRow = nextRows.find(r => r.id === id)
+
+      setPending(prevPending => {
+        const nextPending = new Set(prevPending)
+        if (!nextRow) return nextPending
+        if (nextRow.isNew) {
+          nextPending.add(id)
+          return nextPending
+        }
+
+        const baseline = baselineByIdRef.current.get(id)
+        const baselineCode = baseline?.code ?? ''
+        const baselineSplit = baseline?.split
+        const isDirty = !baseline
+          || (nextRow.code ?? '') !== baselineCode
+          || nextRow.split !== baselineSplit
+
+        if (isDirty) nextPending.add(id)
+        else nextPending.delete(id)
+        return nextPending
+      })
+
+      return nextRows
+    })
+  }, [])
 
   const discardChanges = useCallback(() => {
     setRows(baselineRowsRef.current)
@@ -170,7 +199,12 @@ export default function SplitManager({ onBack }) {
       <ToastViewport toasts={toasts} onClose={dismissToast} />
 
       <header className="sm-header">
-        <Button variant="ghost" size="sm" onClick={onBack} type="button">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => (pendingCount > 0 ? setBackConfirmOpen(true) : onBack())}
+          type="button"
+        >
           <IconBack /> 返回转换
         </Button>
         <div className="sm-header__title">
@@ -243,56 +277,58 @@ export default function SplitManager({ onBack }) {
           <div className="sm-empty">{search || splitFilter !== '全部' ? '未找到匹配的编码' : '暂无数据，请点击 "+ 新增" 添加'}</div>
         ) : (
           <>
-            <table className="sm-table">
-              <thead>
-                <tr><th>商品编码</th><th>拆零规则</th><th>创建时间</th><th>操作</th></tr>
-              </thead>
-              <tbody>
-                {paginatedItems.map(r => {
-                  const isNew = r.isNew
-                  const displayCode = r.code || ''
-                  const isDirty = pending.has(r.id)
-                  return (
-                    <tr key={r.id} className={[
-                      isNew ? 'sm-row--new' : '',
-                      isDirty ? 'sm-row--dirty' : '',
-                    ].filter(Boolean).join(' ')}>
-                      <td className="sm-code">
-                        <div className="sm-code__wrap">
-                          {isDirty && <span className="sm-dirty-dot" title="未保存更改" aria-label="未保存更改" />}
-                          <input
-                            ref={isNew ? newInputRef : null}
-                            className="sm-code__input"
-                            value={displayCode}
-                            onChange={e => updateCell(r.id, 'code', e.target.value)}
-                            placeholder="输入商品编码"
-                            onKeyDown={e => e.key === 'Enter' && saveAll()}
-                          />
-                        </div>
-                      </td>
-                      <td>
-                        <SplitToggle value={r.split} onChange={val => updateCell(r.id, 'split', val)} />
-                      </td>
-                      <td className="sm-time">{r.created_at ? formatDateTime(r.created_at) : '—'}</td>
-                      <td className="sm-cell-actions">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="sm-icon-btn sm-icon-btn--danger"
-                          onClick={() => setDeleteTarget(r)}
-                          type="button"
-                          aria-label="删除"
-                          title="删除"
-                        >
-                          <IconTrash />
-                          <span className="ui-sr-only">删除</span>
-                        </Button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <div className="sm-table-scroll" role="region" aria-label="拆零规则表格（可横向滚动）" tabIndex={0}>
+              <table className="sm-table">
+                <thead>
+                  <tr><th>商品编码</th><th>拆零规则</th><th>创建时间</th><th>操作</th></tr>
+                </thead>
+                <tbody>
+                  {paginatedItems.map(r => {
+                    const isNew = r.isNew
+                    const displayCode = r.code || ''
+                    const isDirty = pending.has(r.id)
+                    return (
+                      <tr key={r.id} className={[
+                        isNew ? 'sm-row--new' : '',
+                        isDirty ? 'sm-row--dirty' : '',
+                      ].filter(Boolean).join(' ')}>
+                        <td className="sm-code">
+                          <div className="sm-code__wrap">
+                            {isDirty && <span className="sm-dirty-dot" title="未保存更改" aria-label="未保存更改" />}
+                            <input
+                              ref={isNew ? newInputRef : null}
+                              className="sm-code__input"
+                              value={displayCode}
+                              onChange={e => updateCell(r.id, 'code', e.target.value)}
+                              placeholder="输入商品编码"
+                              onKeyDown={e => e.key === 'Enter' && saveAll()}
+                            />
+                          </div>
+                        </td>
+                        <td>
+                          <SplitToggle value={r.split} onChange={val => updateCell(r.id, 'split', val)} />
+                        </td>
+                        <td className="sm-time">{r.created_at ? formatDateTime(r.created_at) : '—'}</td>
+                        <td className="sm-cell-actions">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="sm-icon-btn sm-icon-btn--danger"
+                            onClick={() => setDeleteTarget(r)}
+                            type="button"
+                            aria-label="删除"
+                            title="删除"
+                          >
+                            <IconTrash />
+                            <span className="ui-sr-only">删除</span>
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
             <div className="sm-pagination">
               <div className="sm-pagination__info">
                 显示 <strong>{startIndex + 1}-{Math.min(endIndex, filtered.length)}</strong> 条，共 <strong>{filtered.length}</strong> 条
@@ -347,6 +383,34 @@ export default function SplitManager({ onBack }) {
           </div>
         </div>
       )}
+
+      <Modal
+        open={backConfirmOpen}
+        onClose={() => !loading && setBackConfirmOpen(false)}
+        title="确认返回"
+        closeLabel="关闭"
+        footer={(
+          <>
+            <Button variant="secondary" type="button" onClick={() => setBackConfirmOpen(false)} disabled={loading}>
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              type="button"
+              onClick={() => { setBackConfirmOpen(false); onBack() }}
+              disabled={loading}
+            >
+              返回转换
+            </Button>
+          </>
+        )}
+      >
+        <div className="sm-modal__content">
+          <p className="sm-modal__message">
+            当前有 <strong>{pendingCount}</strong> 条未保存更改，返回后将丢失这些更改。是否继续？
+          </p>
+        </div>
+      </Modal>
 
       <Modal
         open={Boolean(deleteTarget)}
