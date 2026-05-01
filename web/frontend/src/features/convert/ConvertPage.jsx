@@ -176,12 +176,18 @@ export default function ConvertPage({ onOpenSplit }) {
   useEffect(() => {
     apiClient.get('/templates')
       .then(res => {
+        const list = res?.data?.templates
+        if (!Array.isArray(list) || list.length === 0) {
+          // 后端返回空数组时不要覆盖前端 fallback，否则下拉会变空
+          addLine('⚠️ 模板列表为空，使用内置模板列表', 'warn')
+          return
+        }
         const map = {}
-        for (const t of res.data.templates) {
+        for (const t of list) {
           map[t.key] = { name: t.name, accept: t.accept }
         }
         setTemplates(map)
-        const firstKey = res.data.templates[0]?.key
+        const firstKey = list[0]?.key
         if (firstKey) setTemplateKey(firstKey)
       })
       .catch(() => addLine('⚠️ 无法获取模板列表，使用内置模板列表', 'warn'))
@@ -197,6 +203,7 @@ export default function ConvertPage({ onOpenSplit }) {
     setLogLines([])
     setProgress(null)
     setDurationMs(null)
+    setMissingCodes(null)
   }
 
   const checkExt = useCallback((f) => {
@@ -260,12 +267,16 @@ export default function ConvertPage({ onOpenSplit }) {
         }
 
         // 保留：转换成功后自动下载
-        const link = document.createElement('a')
-        link.href = `${DOWNLOAD_BASE}/${res.data.filename}`
-        link.download = res.data.filename
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+        try {
+          const link = document.createElement('a')
+          link.href = `${DOWNLOAD_BASE}/${res.data.filename}`
+          link.download = res.data.filename
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+        } catch (err) {
+          addLine(`⚠️ 自动下载失败，请点击“下载结果”手动下载（${err?.message || '未知原因'}）`, 'warn')
+        }
       } else {
         setProgress(null)
         addLine(`❌ 转换失败: ${res.data.error}`, 'error')

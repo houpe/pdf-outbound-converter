@@ -181,7 +181,7 @@
   gap: 6px;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(180deg, var(--primary), var(--primary-dark));
+  background: linear-gradient(180deg, var(--primary), var(--primary-press));
   color: #fff;
   padding: 10px 14px;
   font-weight: 800;
@@ -399,7 +399,7 @@
   line-height: 1;
 }
 .convert-file-remove:hover {
-  color: var(--danger);
+  color: var(--error);
 }
 .convert-file-counter {
   color: var(--text-muted);
@@ -484,7 +484,7 @@
   justify-content: center;
   border-radius: 50%;
   background: rgba(239, 68, 68, 0.12);
-  color: var(--danger);
+  color: var(--error);
   font-weight: 900;
 }
 .convert-error-card p {
@@ -579,7 +579,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--card-border);
 }
 
 .version-modal__header h3 {
@@ -696,7 +696,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--card-border);
 }
 
 .missing-dialog__header h3 {
@@ -736,6 +736,16 @@
   overflow-y: auto;
 }
 
+.missing-dialog__error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--text);
+  font-size: 13px;
+}
+
 .missing-dialog__code-row {
   display: flex;
   justify-content: space-between;
@@ -769,7 +779,7 @@
   gap: 12px;
   justify-content: flex-end;
   padding: 16px 24px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--card-border);
 }
 
 .missing-dialog__btn {
@@ -785,11 +795,11 @@
 .missing-dialog__btn:nth-child(2) {
   background: var(--input-bg);
   color: var(--text);
-  border-color: var(--border-color);
+  border-color: var(--color-border-strong);
 }
 
 .missing-dialog__btn:nth-child(2):hover {
-  background: var(--border-color);
+  background: var(--color-border-strong);
 }
 
 .missing-dialog__btn--primary {
