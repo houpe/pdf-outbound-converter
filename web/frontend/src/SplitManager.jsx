@@ -1,7 +1,12 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import './SplitManager.css'
-import { IconBack, IconTrash, IconSearch, IconLeft, IconRight, IconPlus, IconX } from './Icons'
+import { IconBack, IconTrash, IconSearch, IconLeft, IconRight, IconPlus } from './Icons'
 import SplitToggle from './SplitToggle'
+import Button from './ui/Button'
+import Badge from './ui/Badge'
+import Modal from './ui/Modal'
+import ToastViewport from './ui/Toast'
+import useToast from './lib/hooks/useToast'
 
 const API_BASE = import.meta.env.PROD ? '/wms/api' : '/api'
 
@@ -19,23 +24,30 @@ export default function SplitManager({ onBack }) {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [splitFilter, setSplitFilter] = useState('全部')
-  const [msg, setMsg] = useState(null)
 
   const [pending, setPending] = useState(new Set())
   const [addRowVisible, setAddRowVisible] = useState(false)
   const newInputRef = useRef(null)
 
-  const flashMsg = useCallback((text, type) => {
-    setMsg({ text, type, id: Date.now() })
-    setTimeout(() => setMsg(null), 3000)
-  }, [])
+  const baselineRowsRef = useRef([])
+  const { toasts, pushToast, dismissToast } = useToast({ duration: 3000, limit: 3 })
+
+  const notify = useCallback((message, variant = 'info') => {
+    pushToast({ message, variant })
+  }, [pushToast])
 
   const fetchCodes = useCallback(() => {
     fetch(`${API_BASE}/split-codes`)
       .then(res => res.json())
-      .then(data => setRows((data.codes || []).map(row => ({ ...row, id: row.code, isNew: false }))))
-      .catch(() => flashMsg('️ 获取列表失败', 'error'))
-  }, [flashMsg])
+      .then(data => {
+        const nextRows = (data.codes || []).map(row => ({ ...row, id: row.code, isNew: false }))
+        baselineRowsRef.current = nextRows
+        setRows(nextRows)
+        setPending(new Set())
+        setAddRowVisible(false)
+      })
+      .catch(() => notify('获取列表失败', 'danger'))
+  }, [notify])
 
   useEffect(() => { fetchCodes() }, [fetchCodes])
 
@@ -44,12 +56,18 @@ export default function SplitManager({ onBack }) {
     setPending(prev => new Set(prev).add(id))
   }
 
+  const discardChanges = useCallback(() => {
+    setRows(baselineRowsRef.current)
+    setPending(new Set())
+    setAddRowVisible(false)
+    notify('已放弃未保存更改', 'info')
+  }, [notify])
+
   const saveAll = async () => {
     const changed = rows.filter(r => pending.has(r.id))
-    if (changed.length === 0) { flashMsg('没有需要保存的更改', 'warn'); return }
+    if (changed.length === 0) { notify('没有需要保存的更改', 'warning'); return }
 
     setLoading(true)
-    setPending(new Set())
     try {
       const payload = changed.map(r => ({
         id: r.isNew ? '' : r.id,
@@ -66,45 +84,46 @@ export default function SplitManager({ onBack }) {
         const errMsg = Array.isArray(data.detail)
           ? data.detail.map(e => e.error).join(', ')
           : (data.detail || '未知错误')
-        flashMsg(`保存失败: ${errMsg}`, 'error')
-        fetchCodes()
+        notify(`保存失败：${errMsg}`, 'danger')
         return
       }
-      flashMsg(`✅ 已保存 ${changed.length} 条记录`, 'success')
+      notify(`已保存 ${changed.length} 条记录`, 'success')
       fetchCodes()
-      setAddRowVisible(false)
-    } catch { flashMsg('请求失败', 'error'); fetchCodes() }
+    } catch {
+      notify('请求失败', 'danger')
+    }
     finally { setLoading(false) }
   }
 
   const [deleteTarget, setDeleteTarget] = useState(null)
 
-  const discardRow = (row) => {
-    if (row.isNew) {
-      setRows(prev => prev.filter(r => r.id !== row.id))
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    // new row: local remove only
+    if (deleteTarget.isNew) {
+      setRows(prev => prev.filter(r => r.id !== deleteTarget.id))
       setPending(prev => {
         const next = new Set(prev)
-        next.delete(row.id)
+        next.delete(deleteTarget.id)
         return next
       })
       setAddRowVisible(false)
+      setDeleteTarget(null)
+      notify('已移除未保存的记录', 'info')
       return
     }
-    setDeleteTarget(row)
-  }
 
-  const handleConfirmDelete = async () => {
-    if (!deleteTarget) return;
     setLoading(true)
     try {
       const res = await fetch(`${API_BASE}/split-codes/${encodeURIComponent(deleteTarget.id)}`, { method: 'DELETE' })
       if (!res.ok) {
-        flashMsg('删除失败', 'error')
+        notify('删除失败', 'danger')
         return
       }
-      flashMsg('已删除', 'success')
+      notify('已删除', 'success')
       fetchCodes()
-    } catch { flashMsg('请求失败', 'error') }
+    } catch { notify('请求失败', 'danger') }
     finally {
       setLoading(false)
       setDeleteTarget(null)
@@ -135,17 +154,30 @@ export default function SplitManager({ onBack }) {
   const endIndex = startIndex + pageSize
   const paginatedItems = filtered.slice(startIndex, endIndex)
 
+  const pendingCount = pending.size
+  const deleteTitle = deleteTarget?.isNew ? '确认移除' : '确认删除'
+  const deleteBody = useMemo(() => {
+    if (!deleteTarget) return null
+    const codeText = (deleteTarget.code || '').trim()
+    const label = codeText ? `编码「${codeText}」` : '该记录'
+    return deleteTarget.isNew
+      ? `确定要移除未保存的${label}吗？此操作不会影响已保存的数据。`
+      : `确定要删除${label}吗？此操作不可撤销。`
+  }, [deleteTarget])
+
   return (
     <div className="split-manager">
-      <header className="split-manager__header">
-        <button className="split-manager__back" onClick={onBack} type="button">
-          <IconBack /> 返回转换
-        </button>
-        <h2>商品拆零管理</h2>
-        <span className="split-manager__total">{rows.length} 条记录</span>
-      </header>
+      <ToastViewport toasts={toasts} onClose={dismissToast} />
 
-      {msg && <div key={msg.id} className={`sm-toast sm-toast--${msg.type}`}>{msg.text}</div>}
+      <header className="sm-header">
+        <Button variant="ghost" size="sm" onClick={onBack} type="button">
+          <IconBack /> 返回转换
+        </Button>
+        <div className="sm-header__title">
+          <h2>商品拆零管理</h2>
+        </div>
+        <Badge variant="info" className="sm-header__badge">{rows.length} 条记录</Badge>
+      </header>
 
       <section className="sm-toolbar">
         <div className="sm-search">
@@ -157,29 +189,61 @@ export default function SplitManager({ onBack }) {
             onChange={e => { setSearch(e.target.value); setPage(1) }}
           />
         </div>
-        <select
-          className="sm-filter-select"
-          value={splitFilter}
-          onChange={e => { setSplitFilter(e.target.value); setPage(1) }}
-        >
-          <option value="全部">全部规则</option>
-          <option value="拆零">拆零</option>
-          <option value="不拆零">不拆零</option>
-        </select>
-        <button className="sm-add-btn" onClick={addNewRow} type="button" disabled={addRowVisible}>
-          <IconPlus /> 新增
-        </button>
-        <button className="sm-save-btn" onClick={saveAll} disabled={loading || pending.size === 0}>
-          {loading ? '保存中…' : `保存 (${pending.size})`}
-        </button>
+        <div className="sm-toolbar__controls">
+          <select
+            className="sm-select"
+            value={splitFilter}
+            onChange={e => { setSplitFilter(e.target.value); setPage(1) }}
+            aria-label="拆零筛选"
+          >
+            <option value="全部">全部规则</option>
+            <option value="拆零">拆零</option>
+            <option value="不拆零">不拆零</option>
+          </select>
+          <div className="sm-pagesize">
+            <span className="sm-pagesize__label">每页</span>
+            <select
+              className="sm-select"
+              value={pageSize}
+              onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
+              aria-label="每页条数"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+            <span className="sm-pagesize__label">条</span>
+          </div>
+        </div>
+        <div className="sm-toolbar__actions">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={addNewRow}
+            type="button"
+            disabled={addRowVisible}
+          >
+            <IconPlus /> 新增
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={saveAll}
+            type="button"
+            loading={loading}
+            disabled={pendingCount === 0}
+          >
+            保存{pendingCount > 0 ? ` (${pendingCount})` : ''}
+          </Button>
+        </div>
       </section>
 
-      <section className="sm-table">
+      <section className="sm-table-card">
         {filtered.length === 0 ? (
           <div className="sm-empty">{search || splitFilter !== '全部' ? '未找到匹配的编码' : '暂无数据，请点击 "+ 新增" 添加'}</div>
         ) : (
           <>
-            <table>
+            <table className="sm-table">
               <thead>
                 <tr><th>商品编码</th><th>拆零规则</th><th>创建时间</th><th>操作</th></tr>
               </thead>
@@ -187,24 +251,42 @@ export default function SplitManager({ onBack }) {
                 {paginatedItems.map(r => {
                   const isNew = r.isNew
                   const displayCode = r.code || ''
+                  const isDirty = pending.has(r.id)
                   return (
-                    <tr key={r.id} className={isNew ? 'sm-row--new' : ''}>
+                    <tr key={r.id} className={[
+                      isNew ? 'sm-row--new' : '',
+                      isDirty ? 'sm-row--dirty' : '',
+                    ].filter(Boolean).join(' ')}>
                       <td className="sm-code">
-                        <input
-                          ref={isNew ? newInputRef : null}
-                          className="sm-code__input"
-                          value={displayCode}
-                          onChange={e => updateCell(r.id, 'code', e.target.value)}
-                          placeholder="输入商品编码"
-                          onKeyDown={e => e.key === 'Enter' && saveAll()}
-                        />
+                        <div className="sm-code__wrap">
+                          {isDirty && <span className="sm-dirty-dot" title="未保存更改" aria-label="未保存更改" />}
+                          <input
+                            ref={isNew ? newInputRef : null}
+                            className="sm-code__input"
+                            value={displayCode}
+                            onChange={e => updateCell(r.id, 'code', e.target.value)}
+                            placeholder="输入商品编码"
+                            onKeyDown={e => e.key === 'Enter' && saveAll()}
+                          />
+                        </div>
                       </td>
                       <td>
                         <SplitToggle value={r.split} onChange={val => updateCell(r.id, 'split', val)} />
                       </td>
                       <td className="sm-time">{r.created_at ? formatDateTime(r.created_at) : '—'}</td>
                       <td className="sm-cell-actions">
-                        <button className="sm-action-btn sm-action-btn--danger" onClick={() => discardRow(r)} title="删除"><IconTrash /></button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="sm-icon-btn sm-icon-btn--danger"
+                          onClick={() => setDeleteTarget(r)}
+                          type="button"
+                          aria-label="删除"
+                          title="删除"
+                        >
+                          <IconTrash />
+                          <span className="ui-sr-only">删除</span>
+                        </Button>
                       </td>
                     </tr>
                   )
@@ -216,33 +298,32 @@ export default function SplitManager({ onBack }) {
                 显示 <strong>{startIndex + 1}-{Math.min(endIndex, filtered.length)}</strong> 条，共 <strong>{filtered.length}</strong> 条
               </div>
               <div className="sm-pagination__group">
-                <div className="sm-pagination__size-box">
-                  <span className="sm-pagination__size-label">每页</span>
-                  <select className="sm-select" value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}>
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                  </select>
-                  <span className="sm-pagination__size-label">条</span>
-                </div>
                 <div className="sm-pagination__nav">
-                  <button
-                    className="sm-pagination__btn"
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="sm-page-btn"
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={currentPage <= 1}
+                    type="button"
                   >
                     <IconLeft />
-                  </button>
+                    <span className="ui-sr-only">上一页</span>
+                  </Button>
                   <span className="sm-pagination__page-text">
                     {currentPage} / {totalPages}
                   </span>
-                  <button
-                    className="sm-pagination__btn"
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="sm-page-btn"
                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage >= totalPages}
+                    type="button"
                   >
                     <IconRight />
-                  </button>
+                    <span className="ui-sr-only">下一页</span>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -250,31 +331,48 @@ export default function SplitManager({ onBack }) {
         )}
       </section>
 
-      {deleteTarget && (
-        <div className="sm-dialog__overlay" onClick={() => !loading && setDeleteTarget(null)}>
-          <div className="sm-dialog__container">
-            <div className="sm-dialog__wrapper">
-              <div className="sm-dialog__panel">
-                <div className="sm-dialog__header-row">
-                  <h3 className="sm-dialog__title">确认删除</h3>
-                  <button className="sm-dialog__close" onClick={() => setDeleteTarget(null)} disabled={loading}>
-                    <IconX />
-                  </button>
-                </div>
-                <div className="sm-dialog__message">
-                  确定要删除编码 <strong className="sm-dialog__strong">{deleteTarget.code}</strong> 吗？<br/>此操作不可撤销。
-                </div>
-                <div className="sm-dialog__footer">
-                  <button className="sm-dialog__btn sm-dialog__btn--cancel" onClick={() => setDeleteTarget(null)} disabled={loading}>取消</button>
-                  <button className="sm-dialog__btn sm-dialog__btn--delete" onClick={handleConfirmDelete} disabled={loading}>
-                    {loading ? '删除中...' : '确认删除'}
-                  </button>
-                </div>
-              </div>
-            </div>
+      {pendingCount > 0 && (
+        <div className="sm-dirtybar" role="status" aria-live="polite">
+          <div className="sm-dirtybar__left">
+            <span className="sm-dirtybar__dot" aria-hidden="true" />
+            待保存 <strong>{pendingCount}</strong> 条
+          </div>
+          <div className="sm-dirtybar__actions">
+            <Button variant="secondary" size="sm" type="button" onClick={discardChanges} disabled={loading}>
+              放弃更改
+            </Button>
+            <Button variant="primary" size="sm" type="button" onClick={saveAll} loading={loading}>
+              保存更改
+            </Button>
           </div>
         </div>
       )}
+
+      <Modal
+        open={Boolean(deleteTarget)}
+        onClose={() => !loading && setDeleteTarget(null)}
+        title={deleteTitle}
+        closeLabel="关闭"
+        footer={(
+          <>
+            <Button variant="secondary" type="button" onClick={() => setDeleteTarget(null)} disabled={loading}>
+              取消
+            </Button>
+            <Button
+              variant={deleteTarget?.isNew ? 'danger' : 'danger'}
+              type="button"
+              onClick={handleConfirmDelete}
+              loading={loading}
+            >
+              {deleteTarget?.isNew ? '移除' : '删除'}
+            </Button>
+          </>
+        )}
+      >
+        <div className="sm-modal__content">
+          <p className="sm-modal__message">{deleteBody}</p>
+        </div>
+      </Modal>
     </div>
   )
 }
