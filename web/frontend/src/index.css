@@ -1,28 +1,104 @@
 /* ===== Design Tokens ===== */
 :root {
-  --bg:          #F0F4F0;
-  --primary:     #217346;
-  --primary-hov: #1A5E38;
-  --primary-press: #145030;
-  --primary-10:  #E8F5EC;
-  --accent:      #10B981;
-  --text:        #1E293B;
-  --text-muted:  #64748B;
-  --card:        #FFFFFF;
-  --card-border: #D8E6D8;
-  --input-bg:    #F8FAF8;
-  --input-border:#CBD5C3;
-  --input-focus: #217346;
-  --success:     #10B981;
-  --error:       #EF4444;
-  --warning:     #F59E0B;
-  --progress-bg: #E2E8E2;
-  --shadow:      0 4px 24px rgba(33,115,70,0.08);
-  --shadow-lg:   0 8px 40px rgba(33,115,70,0.12);
-  --radius:      12px;
-  --radius-sm:   8px;
-  --radius-xs:   6px;
-  --transition:  0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  /* ------------------------------------------------------------------ */
+  /* Layer 1: palette (raw values)                                       */
+  /* ------------------------------------------------------------------ */
+  --color-surface-0:   #FFFFFF;
+  --color-surface-50:  #F8FAF8;
+  --color-surface-100: #F0F4F0;
+
+  --color-border-200:  #D8E6D8;
+  --color-border-300:  #CBD5C3;
+
+  --color-slate-800:   #1E293B;
+  --color-slate-500:   #64748B;
+
+  --color-green-700:   #145030;
+  --color-green-650:   #1A5E38;
+  --color-green-600:   #217346;
+  --color-green-100:   #E8F5EC;
+  --color-green-500:   #10B981;
+
+  --color-danger-500:  #EF4444;
+  --color-warning-500: #F59E0B;
+  --color-progress-200:#E2E8E2;
+
+  /* ------------------------------------------------------------------ */
+  /* Layer 2: semantic tokens (preferred for new code)                   */
+  /* ------------------------------------------------------------------ */
+  --color-bg:           var(--color-surface-100);
+  --color-surface:      var(--color-surface-0);
+  --color-surface-muted:var(--color-surface-50);
+  --color-border:       var(--color-border-200);
+  --color-border-strong:var(--color-border-300);
+
+  --color-text:         var(--color-slate-800);
+  --color-text-muted:   var(--color-slate-500);
+
+  --color-primary:      var(--color-green-600);
+  --color-primary-hover:var(--color-green-650);
+  --color-primary-press:var(--color-green-700);
+  --color-primary-soft: var(--color-green-100);
+  --color-accent:       var(--color-green-500);
+
+  --color-success:      var(--color-green-500);
+  --color-warning:      var(--color-warning-500);
+  --color-danger:       var(--color-danger-500);
+
+  --color-progress-bg:  var(--color-progress-200);
+  --color-focus-ring:   var(--color-primary);
+
+  /* ------------------------------------------------------------------ */
+  /* Layout/interaction tokens                                           */
+  /* ------------------------------------------------------------------ */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 4px 24px rgba(33,115,70,0.08);
+  --shadow-md: 0 8px 40px rgba(33,115,70,0.12);
+
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ------------------------------------------------------------------ */
+  /* Legacy aliases (do not remove; keeps existing styles stable)        */
+  /* ------------------------------------------------------------------ */
+  --bg:           var(--color-bg);
+  --card:         var(--color-surface);
+  --card-border:  var(--color-border);
+
+  --input-bg:     var(--color-surface-muted);
+  --input-border: var(--color-border-strong);
+  --input-focus:  var(--color-primary);
+
+  --text:         var(--color-text);
+  --text-muted:   var(--color-text-muted);
+
+  --primary:      var(--color-primary);
+  --primary-hov:  var(--color-primary-hover);
+  --primary-press:var(--color-primary-press);
+  --primary-10:   var(--color-primary-soft);
+  --accent:       var(--color-accent);
+
+  --success:      var(--color-success);
+  --error:        var(--color-danger);
+  --warning:      var(--color-warning);
+  --progress-bg:  var(--color-progress-bg);
+
+  --shadow:       var(--shadow-sm);
+  --shadow-lg:    var(--shadow-md);
+
+  --radius:       var(--radius-md);
+  --transition:   var(--transition-normal);
 }
 
 body {
