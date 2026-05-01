@@ -54,6 +54,10 @@ venv/
 .playwright-mcp/
 .qwen/
 
+# Git worktrees（项目内隔离开发目录）
+.worktrees/
+worktrees/
+
 # 保留资源
 !app_icon.iconset/
 !icon_source.png
