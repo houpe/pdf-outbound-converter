@@ -46,6 +46,14 @@ web/backend/conversion_log.jsonl
 .venv/
 venv/
 
+# SOLO/Claude 工具与临时状态
+.superpowers/
+.claude/
+.omc/
+.playwright-cli/
+.playwright-mcp/
+.qwen/
+
 # 保留资源
 !app_icon.iconset/
 !icon_source.png
