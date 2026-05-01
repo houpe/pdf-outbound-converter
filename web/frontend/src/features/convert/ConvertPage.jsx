@@ -14,9 +14,19 @@ const FALLBACK_TEMPLATES = {
   hlmc: { name: '欢乐牧场', accept: '.xlsx,.xls' },
 }
 
-const CURRENT_VERSION = 'v3.7'
+const CURRENT_VERSION = 'v3.8'
 
 const VERSION_HISTORY = [
+  {
+    version: 'v3.8',
+    date: '2025-05-02 02:00',
+    changes: [
+      '前端架构重构：App.jsx 精简为 13 行路由控制器，核心逻辑拆解至 features/convert',
+      '新增组件化库：提取 Button/Badge/Card/Modal/Toast 等通用 UI 组件',
+      'UI 升级：转换页升级为双栏工作台布局，集成 Toast 通知和自动下载容错',
+      '新增 lib 模块：统一管理 API 请求 (apiClient) 和错误处理 (errors)',
+    ],
+  },
   {
     version: 'v3.7',
     date: '2025-05-01 22:30',
