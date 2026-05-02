@@ -16,64 +16,16 @@ from config import HLMC_RECEIVERS
 SHOP_ABBREVIATIONS = {
     "金桥": "JQ",
     "银泰": "YT",
-    "金银屯": "JYT",
     "金银潭": "JYT",
+    "金银屯": "JYT",
 }
-
-COUNTER_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_counters.json")
-HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_history.json")
-_counter_lock = threading.Lock()
-
-
-def _get_next_hlmc_order_no(shop_name: str) -> str:
-    """
-    生成并持久化欢乐牧场外部单号。
-    格式：[缩写][YYMMDD][4位流水号]
-    """
-    prefix = "xx"
-    for key, code in SHOP_ABBREVIATIONS.items():
-        if key in shop_name:
-            prefix = code
-            break
-
-    today_str = date.today().strftime("%y%m%d")
-
-    with _counter_lock:
-        current_data = {}
-        if os.path.exists(COUNTER_FILE):
-            try:
-                with open(COUNTER_FILE, "r", encoding="utf-8") as f:
-                    current_data = json.load(f)
-            except (json.JSONDecodeError, FileNotFoundError):
-                current_data = {}
-
-        if prefix not in current_data:
-            current_data[prefix] = {"date": today_str, "count": 0}
-
-        stored = current_data[prefix]
-
-        if stored["date"] != today_str:
-            stored["date"] = today_str
-            stored["count"] = 0
-
-        stored["count"] += 1
-        count = stored["count"]
-
-        try:
-            with open(COUNTER_FILE, "w", encoding="utf-8") as f:
-                json.dump(current_data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Warning: Failed to update hlmc counter: {e}")
-
-    return f"{prefix}{today_str}{count:04d}"
-
 
 COUNTER_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_counters.json")
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_history.json")
 _file_lock = threading.Lock()
 
 
-def _safe_load_json(path: str) -> dict:
+def _load_json(path: str) -> dict:
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
@@ -83,7 +35,7 @@ def _safe_load_json(path: str) -> dict:
     return {}
 
 
-def _safe_save_json(path: str, data: dict):
+def _save_json(path: str, data: dict):
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -92,7 +44,6 @@ def _safe_save_json(path: str, data: dict):
 
 
 def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]]]:
-    """解析欢乐牧场 Excel 出库单"""
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     ws = wb.active
     all_records: List[Dict[str, str]] = []
@@ -100,17 +51,21 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
     today_str = date.today().strftime("%y%m%d")
     
     with _file_lock:
-        counters = _safe_load_json(COUNTER_FILE)
-        history = _safe_load_json(HISTORY_FILE)
+        counters = _load_json(COUNTER_FILE)
+        history = _load_json(HISTORY_FILE)
 
-    def ensure_counter(prefix):
-        if prefix not in counters:
-            counters[prefix] = {"date": today_str, "count": 0}
-        stored = counters[prefix]
+    def get_next_order_no(store_prefix: str):
+        if store_prefix not in counters:
+            counters[store_prefix] = {"date": today_str, "count": 0}
+        
+        stored = counters[store_prefix]
+        
         if stored["date"] != today_str:
             stored["date"] = today_str
             stored["count"] = 0
-        return stored
+            
+        stored["count"] += 1
+        return f"{store_prefix}{today_str}{stored['count']:04d}"
 
     header_row = ws[1]
     col_frozen = None
@@ -176,25 +131,24 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
                 if qty_val > 0:
                     recv = _match_store(shop_name)
                     
+                    # 前缀
                     prefix = "XX"
                     for key, code in SHOP_ABBREVIATIONS.items():
                         if key in shop_name: prefix = code; break
                     
-                    stored_counter = ensure_counter(prefix)
-                    
                     qty_int = int(qty_val)
+                    # 签名规则：门店 | 商品编码 | 数量 (取整)
                     sig = f"{shop_name}|{ext_code}|{qty_int}"
                     
+                    # 尝试从历史记录获取 (去重核心逻辑)
                     order_no = None
                     if prefix in history:
                         if sig in history[prefix]:
                             order_no = history[prefix][sig]
 
+                    # 如果历史记录中没有，生成新单号并保存
                     if order_no is None:
-                        stored_counter["count"] += 1
-                        new_count = stored_counter["count"]
-                        order_no = f"{prefix}{today_str}{new_count:04d}"
-                        
+                        order_no = get_next_order_no(prefix)
                         if prefix not in history:
                             history[prefix] = {}
                         history[prefix][sig] = order_no
@@ -217,12 +171,13 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
                     })
         r += 1
 
+    # 持久化更新后的计数器和历史记录
     with _file_lock:
-        _safe_save_json(COUNTER_FILE, counters)
-        _safe_save_json(HISTORY_FILE, history)
+        _save_json(COUNTER_FILE, counters)
+        _save_json(HISTORY_FILE, history)
 
     info = {
-        "order_no": next(iter([all_records[0]["order_no"]])) if all_records else "",
+        "order_no": all_records[0]["order_no"] if all_records else "",
         "receiver_org": "",
         "supplier_org": "",
         "receiver_name": "",
