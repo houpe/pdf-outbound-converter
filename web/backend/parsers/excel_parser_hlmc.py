@@ -3,24 +3,77 @@ WMS 转换服务 Excel 解析器 - 欢乐牧场
 解析欢乐牧场 Excel 出库单。
 """
 
+import json
+import os
+import threading
 from datetime import date
 from typing import Dict, List, Tuple
-import uuid
 
 import openpyxl
 
 from config import HLMC_RECEIVERS
 
+SHOP_ABBREVIATIONS = {
+    "金桥": "JQ",
+    "银泰": "YT",
+    "金银屯": "JYT",
+    "金银潭": "JYT",
+}
+
+COUNTER_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_counters.json")
+_counter_lock = threading.Lock()
+
+
+def _get_next_hlmc_order_no(shop_name: str) -> str:
+    """
+    生成并持久化欢乐牧场外部单号。
+    格式：[缩写][YYMMDD][4位流水号]
+    """
+    prefix = "xx"
+    for key, code in SHOP_ABBREVIATIONS.items():
+        if key in shop_name:
+            prefix = code
+            break
+
+    today_str = date.today().strftime("%y%m%d")
+
+    with _counter_lock:
+        current_data = {}
+        if os.path.exists(COUNTER_FILE):
+            try:
+                with open(COUNTER_FILE, "r", encoding="utf-8") as f:
+                    current_data = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                current_data = {}
+
+        if prefix not in current_data:
+            current_data[prefix] = {"date": today_str, "count": 0}
+
+        stored = current_data[prefix]
+
+        if stored["date"] != today_str:
+            stored["date"] = today_str
+            stored["count"] = 0
+
+        stored["count"] += 1
+        count = stored["count"]
+
+        try:
+            with open(COUNTER_FILE, "w", encoding="utf-8") as f:
+                json.dump(current_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Warning: Failed to update hlmc counter: {e}")
+
+    return f"{prefix}{today_str}{count:04d}"
+
 
 def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]]]:
+    """解析欢乐牧场 Excel 出库单"""
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     ws = wb.active
     all_records: List[Dict[str, str]] = []
 
-    # 生成日期订单号: YYMMDD + 4位随机数 (Business Requirement)
-    today_str = date.today().strftime("%y%m%d")
-    random_suffix = f"{uuid.uuid4().int % 10000:04d}"
-    generated_order_no = f"{today_str}{random_suffix}"
+    shop_order_numbers: Dict[str, str] = {}
 
     header_row = ws[1]
     col_frozen = None
@@ -97,6 +150,12 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
                     qty_val = 0
                 if qty_val > 0:
                     recv = _match_store(shop_name)
+
+                    order_no = shop_order_numbers.get(shop_name)
+                    if order_no is None:
+                        order_no = _get_next_hlmc_order_no(shop_name)
+                        shop_order_numbers[shop_name] = order_no
+
                     all_records.append({
                         "item_code": str(ext_code or "").strip(),
                         "item_name": str(sku_name or "").strip(),
@@ -109,14 +168,14 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
                         "receiver_name": recv.get("name", ""),
                         "receiver_phone": recv.get("phone", ""),
                         "receiver_address": recv.get("address", ""),
-                        "order_no": generated_order_no,
+                        "order_no": order_no,
                         "supplier_org": "",
                         "order_date": "",
                     })
         r += 1
 
     info = {
-        "order_no": generated_order_no,
+        "order_no": next(iter(shop_order_numbers.values()), ""),
         "receiver_org": "",
         "supplier_org": "",
         "receiver_name": "",
