@@ -14,9 +14,18 @@ const FALLBACK_TEMPLATES = {
   hlmc: { name: '欢乐牧场', accept: '.xlsx,.xls' },
 }
 
-const CURRENT_VERSION = 'v3.8'
+const CURRENT_VERSION = 'v3.9'
 
 const VERSION_HISTORY = [
+  {
+    version: 'v3.9',
+    date: '2025-05-02 12:00',
+    changes: [
+      '欢乐牧场模板：订单号重构，采用 YYMMDD + 4位随机数 (如 2605020001)',
+      '优化多文件累加选择逻辑，支持自动去重合并',
+      '新增“清除全部”按钮，单文件状态亦可使用',
+    ],
+  },
   {
     version: 'v3.8',
     date: '2025-05-02 02:00',

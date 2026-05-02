@@ -3,16 +3,17 @@ import { DOWNLOAD_BASE } from '../../lib/apiClient'
 
 function EmptyState() {
   return (
-    <div className="convert-empty-state">
-      <div className="convert-empty-state__icon">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-          <path d="M24 32V16M24 16l-8 8M24 16l8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M8 32v4a4 4 0 004 4h24a4 4 0 004-4v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
+      <div className="convert-empty-state">
+        <div className="convert-empty-state__icon">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="20" stroke="currentColor" strokeWidth="2" strokeDasharray="4 4" opacity="0.3" />
+            <circle cx="24" cy="24" r="12" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M24 18v6l4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <p className="convert-empty-state__text">暂无转换数据</p>
+        <span className="convert-empty-state__hint">上传文件并开始转换后<br />处理状态与结果将在此展示</span>
       </div>
-      <p className="convert-empty-state__text">等待文件</p>
-      <span className="convert-empty-state__hint">选择模板并上传后<br />转换状态将在此展示</span>
-    </div>
   )
 }
 

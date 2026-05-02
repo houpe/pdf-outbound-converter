@@ -83,7 +83,7 @@ export default function FileDropzone({
           ))}
           <div className="convert-file-counter">
             {files.length} 个文件
-            {onClearAll && files.length > 1 ? (
+            {onClearAll && files.length >= 1 ? (
               <button className="convert-file-clear-all" onClick={(e) => { e.stopPropagation(); onClearAll() }} type="button">清除全部</button>
             ) : null}
           </div>

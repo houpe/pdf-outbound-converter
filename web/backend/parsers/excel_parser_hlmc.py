@@ -3,7 +3,9 @@ WMS 转换服务 Excel 解析器 - 欢乐牧场
 解析欢乐牧场 Excel 出库单。
 """
 
+from datetime import date
 from typing import Dict, List, Tuple
+import uuid
 
 import openpyxl
 
@@ -11,10 +13,14 @@ from config import HLMC_RECEIVERS
 
 
 def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]]]:
-    """解析欢乐牧场 Excel 出库单"""
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     ws = wb.active
     all_records: List[Dict[str, str]] = []
+
+    # 生成日期订单号: YYMMDD + 4位随机数 (Business Requirement)
+    today_str = date.today().strftime("%y%m%d")
+    random_suffix = f"{uuid.uuid4().int % 10000:04d}"
+    generated_order_no = f"{today_str}{random_suffix}"
 
     header_row = ws[1]
     col_frozen = None
@@ -103,14 +109,14 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
                         "receiver_name": recv.get("name", ""),
                         "receiver_phone": recv.get("phone", ""),
                         "receiver_address": recv.get("address", ""),
-                        "order_no": "",
+                        "order_no": generated_order_no,
                         "supplier_org": "",
                         "order_date": "",
                     })
         r += 1
 
     info = {
-        "order_no": "",
+        "order_no": generated_order_no,
         "receiver_org": "",
         "supplier_org": "",
         "receiver_name": "",
