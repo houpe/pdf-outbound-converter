@@ -63,3 +63,11 @@ worktrees/
 !icon_source.png
 !icon.icns
 !app_icon.icns
+*.json
+!config.json
+!package.json
+!tsconfig.json
+!package-lock.json
+hlmc_counters.json
+hlmc_history.json
+conversion_log.jsonl
