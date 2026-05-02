@@ -6,6 +6,7 @@ export default function FileDropzone({
   files,
   onPick,
   onRemove,
+  onClearAll,
   disabled = false,
 }) {
   const [isDragOver, setIsDragOver] = useState(false)
@@ -80,7 +81,12 @@ export default function FileDropzone({
               </button>
             </div>
           ))}
-          <div className="convert-file-counter">{files.length} 个文件</div>
+          <div className="convert-file-counter">
+            {files.length} 个文件
+            {onClearAll && files.length > 1 ? (
+              <button className="convert-file-clear-all" onClick={(e) => { e.stopPropagation(); onClearAll() }} type="button">清除全部</button>
+            ) : null}
+          </div>
         </div>
       ) : (
         <div className="convert-upload-prompt">

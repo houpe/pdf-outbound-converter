@@ -224,7 +224,11 @@ export default function ConvertPage({ onOpenSplit }) {
   const onFilePick = useCallback((list) => {
     if (!list?.length) return
     const selected = Array.from(list)
-    setFiles(selected)
+    setFiles(prev => {
+      const existingKeys = new Set(prev.map(f => `${f.name}-${f.size}`))
+      const newOnes = selected.filter(f => !existingKeys.has(`${f.name}-${f.size}`))
+      return [...prev, ...newOnes]
+    })
     setResult(null)
     const names = selected.map(f => f.name).join('、')
     setLogLines(p => [
@@ -353,6 +357,7 @@ export default function ConvertPage({ onOpenSplit }) {
                 files={files}
                 onPick={onFilePick}
                 onRemove={removeFile}
+                onClearAll={() => { setFiles([]); setResult(null); setLogLines([]); }}
                 disabled={isBusy}
               />
             </div>
