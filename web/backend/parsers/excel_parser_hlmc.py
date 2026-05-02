@@ -21,6 +21,7 @@ SHOP_ABBREVIATIONS = {
 }
 
 COUNTER_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_counters.json")
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_history.json")
 _counter_lock = threading.Lock()
 
 
@@ -67,13 +68,49 @@ def _get_next_hlmc_order_no(shop_name: str) -> str:
     return f"{prefix}{today_str}{count:04d}"
 
 
+COUNTER_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_counters.json")
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_history.json")
+_file_lock = threading.Lock()
+
+
+def _safe_load_json(path: str) -> dict:
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+
+def _safe_save_json(path: str, data: dict):
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+
 def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]]]:
     """解析欢乐牧场 Excel 出库单"""
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     ws = wb.active
     all_records: List[Dict[str, str]] = []
 
-    shop_order_numbers: Dict[str, str] = {}
+    today_str = date.today().strftime("%y%m%d")
+    
+    with _file_lock:
+        counters = _safe_load_json(COUNTER_FILE)
+        history = _safe_load_json(HISTORY_FILE)
+
+    def ensure_counter(prefix):
+        if prefix not in counters:
+            counters[prefix] = {"date": today_str, "count": 0}
+        stored = counters[prefix]
+        if stored["date"] != today_str:
+            stored["date"] = today_str
+            stored["count"] = 0
+        return stored
 
     header_row = ws[1]
     col_frozen = None
@@ -86,47 +123,35 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
 
     for c in range(1, ws.max_column + 1):
         val = str(header_row[c - 1].value or "").strip()
-        if val == "冻结数量的总和":
-            col_frozen = c
-        elif val == "单位":
-            col_unit = c
-        elif val == "下单后结余":
-            col_surplus = c
-        elif val in ("SKU名称", "商品名称"):
-            col_sku_name = c
-        elif val == "外部商品编码":
-            col_ext_code = c
-        elif val == "商品编码" and not col_ext_code:
-            col_ext_code = c
-        elif val in ("库存单位", "单位"):
-            col_sku_unit = c
-        elif val == "规格":
-            col_sku_spec = c
+        if val == "冻结数量的总和": col_frozen = c
+        elif val == "单位": col_unit = c
+        elif val == "下单后结余": col_surplus = c
+        elif val in ("SKU名称", "商品名称"): col_sku_name = c
+        elif val == "外部商品编码": col_ext_code = c
+        elif val == "商品编码" and not col_ext_code: col_ext_code = c
+        elif val in ("库存单位", "单位"): col_sku_unit = c
+        elif val == "规格": col_sku_spec = c
 
     if col_surplus is None:
         raise ValueError("欢乐牧场模板格式错误：找不到\"下单后结余\"列")
 
     shop_start = col_frozen if col_frozen else (col_unit if col_unit else 0)
-
     shop_cols: Dict[int, str] = {}
     for c in range(shop_start + 1, col_surplus):
         shop_name = str(header_row[c - 1].value or "").strip()
-        if shop_name:
-            shop_cols[c] = shop_name
+        if shop_name: shop_cols[c] = shop_name
 
     if not shop_cols:
         for c in range(1, col_surplus):
             v = header_row[c - 1].value
-            if v and str(v).strip():
-                shop_cols[c] = str(v).strip()
+            if v and str(v).strip(): shop_cols[c] = str(v).strip()
 
     if not shop_cols:
         raise ValueError("欢乐牧场模板格式错误：找不到店铺列")
 
     def _match_store(shop_name: str) -> Dict[str, str]:
         for key, recv in HLMC_RECEIVERS.items():
-            if key in shop_name:
-                return recv
+            if key in shop_name: return recv
         return {}
 
     r = 2
@@ -146,20 +171,38 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
             if qty is not None:
                 try:
                     qty_val = float(qty)
-                except (ValueError, TypeError):
-                    qty_val = 0
+                except: qty_val = 0
+                
                 if qty_val > 0:
                     recv = _match_store(shop_name)
+                    
+                    prefix = "XX"
+                    for key, code in SHOP_ABBREVIATIONS.items():
+                        if key in shop_name: prefix = code; break
+                    
+                    stored_counter = ensure_counter(prefix)
+                    
+                    qty_int = int(qty_val)
+                    sig = f"{shop_name}|{ext_code}|{qty_int}"
+                    
+                    order_no = None
+                    if prefix in history:
+                        if sig in history[prefix]:
+                            order_no = history[prefix][sig]
 
-                    order_no = shop_order_numbers.get(shop_name)
                     if order_no is None:
-                        order_no = _get_next_hlmc_order_no(shop_name)
-                        shop_order_numbers[shop_name] = order_no
+                        stored_counter["count"] += 1
+                        new_count = stored_counter["count"]
+                        order_no = f"{prefix}{today_str}{new_count:04d}"
+                        
+                        if prefix not in history:
+                            history[prefix] = {}
+                        history[prefix][sig] = order_no
 
                     all_records.append({
                         "item_code": str(ext_code or "").strip(),
                         "item_name": str(sku_name or "").strip(),
-                        "quantity": str(int(float(qty))),
+                        "quantity": str(qty_int),
                         "unit": sku_unit,
                         "spec": sku_spec,
                         "category": "",
@@ -174,8 +217,12 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
                     })
         r += 1
 
+    with _file_lock:
+        _safe_save_json(COUNTER_FILE, counters)
+        _safe_save_json(HISTORY_FILE, history)
+
     info = {
-        "order_no": next(iter(shop_order_numbers.values()), ""),
+        "order_no": next(iter([all_records[0]["order_no"]])) if all_records else "",
         "receiver_org": "",
         "supplier_org": "",
         "receiver_name": "",
