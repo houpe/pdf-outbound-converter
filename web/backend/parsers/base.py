@@ -47,3 +47,13 @@ def search_all_cols(ws: Worksheet, target: str) -> List[Tuple[int, int]]:
             if v and str(v).strip() == target:
                 cells.append((r, c))
     return cells
+
+
+def _normalize_receiver_name(name: str) -> str:
+    """如果收件人姓名只有一个字，重复成两个字"""
+    if not name:
+        return name
+    stripped = name.strip()
+    if len(stripped) == 1:
+        return stripped * 2
+    return stripped

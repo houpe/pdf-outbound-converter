@@ -4,6 +4,7 @@ WMS PDF/Excel 转换工具 - FastAPI 后端入口
 将PDF/Excel出库单转换为标准OMS出库Excel格式。
 """
 
+import logging
 import os
 import re
 import sqlite3
@@ -12,6 +13,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -133,11 +135,31 @@ async def convert_file(
         raise
 
 
-@app.get("/api/logs")
-def get_logs(limit: int = 200):
+@app.get("/api/version")
+def get_version_history():
+    from database import get_db
+    conn = get_db()
+    rows = conn.execute("SELECT version, date, changes FROM version_history ORDER BY version DESC").fetchall()
+    conn.close()
+    history = []
+    for row in rows:
+        history.append({
+            "version": row["version"],
+            "date": row["date"],
+            "changes": [c.strip() for c in row["changes"].split(";") if c.strip()],
+        })
+    return {"version": history[0]["version"] if history else "unknown", "history": history}
+
+
+@app.get("/api/logs/stats")
+def get_logs_stats():
     from config import LOG_FILE
     if not LOG_FILE.exists():
-        return {"logs": [], "total": 0}
+        return {
+            "total_conversions": 0, "success_count": 0, "error_count": 0,
+            "total_files": 0, "total_items": 0, "total_stores": 0,
+            "total_quantity": 0, "template_stats": [],
+        }
     import json
     entries = []
     with open(LOG_FILE, "r", encoding="utf-8") as f:
@@ -149,8 +171,47 @@ def get_logs(limit: int = 200):
                 entries.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-    entries.reverse()
-    return {"logs": entries[:limit], "total": len(entries)}
+
+    total = len(entries)
+    success = sum(1 for e in entries if e.get("status") == "success")
+    errors = sum(1 for e in entries if e.get("status") == "error")
+    total_files = sum(int(e.get("file_count", 0) or 0) for e in entries if e.get("status") == "success")
+    total_items = sum(int(e.get("item_count", 0) or 0) for e in entries if e.get("status") == "success")
+    total_stores = sum(int(e.get("store_count", 0) or 0) for e in entries if e.get("status") == "success")
+    total_quantity = 0
+    for e in entries:
+        if e.get("status") == "success":
+            tq = e.get("total_quantity", 0)
+            if tq is None:
+                continue
+            try:
+                total_quantity += int(float(str(tq).replace(",", "")))
+            except (ValueError, TypeError):
+                pass
+
+    tmpl_map = {}
+    for e in entries:
+        if e.get("status") != "success":
+            continue
+        tk = e.get("template_key", "unknown")
+        tn = e.get("template_name", tk)
+        if tk not in tmpl_map:
+            tmpl_map[tk] = {"key": tk, "name": tn, "count": 0, "files": 0, "items": 0, "stores": 0}
+        tmpl_map[tk]["count"] += 1
+        tmpl_map[tk]["files"] += int(e.get("file_count", 0) or 0)
+        tmpl_map[tk]["items"] += int(e.get("item_count", 0) or 0)
+        tmpl_map[tk]["stores"] += int(e.get("store_count", 0) or 0)
+
+    return {
+        "total_conversions": total,
+        "success_count": success,
+        "error_count": errors,
+        "total_files": total_files,
+        "total_items": total_items,
+        "total_stores": total_stores,
+        "total_quantity": total_quantity,
+        "template_stats": sorted(tmpl_map.values(), key=lambda x: x["count"], reverse=True),
+    }
 
 
 # --- 拆零配置 CRUD ---

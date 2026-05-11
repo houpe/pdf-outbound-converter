@@ -7,7 +7,9 @@ from typing import Dict, List, Tuple
 
 import openpyxl
 
-from parsers.base import _extract_shop_name, _find_row_label, search_all_cols
+from parsers.base import _extract_shop_name, _find_row_label, _normalize_receiver_name, search_all_cols
+
+LMT_RECEIVER_PHONE = "18888888888"
 
 
 def parse_lmt_excel(excel_path: str, filename: str = "") -> Tuple[Dict[str, str], List[Dict[str, str]]]:
@@ -46,19 +48,6 @@ def parse_lmt_excel(excel_path: str, filename: str = "") -> Tuple[Dict[str, str]
     r_rec = _find_row_label(ws, {"收货人"})
     if r_rec:
         rec_name = str(ws.cell(row=r_rec, column=2).value or "").strip()
-        cells = search_all_cols(ws, "收货电话")
-        rec_phone_val = ""
-        if cells:
-            for rr, cc in cells:
-                v = ws.cell(row=rr, column=cc + 1).value
-                if v is not None:
-                    rec_phone_val = v
-                    break
-        if isinstance(rec_phone_val, float) and rec_phone_val == int(rec_phone_val):
-            rec_phone_val = int(rec_phone_val)
-        if isinstance(rec_phone_val, (int, float)):
-            rec_phone_val = str(rec_phone_val)
-
         cells = search_all_cols(ws, "收货地址")
         rec_addr = ""
         if cells:
@@ -68,12 +57,12 @@ def parse_lmt_excel(excel_path: str, filename: str = "") -> Tuple[Dict[str, str]
                     rec_addr = str(v).strip()
                     break
 
-        info["receiver_name"] = rec_name if rec_name else (shop_name or "")
-        info["receiver_phone"] = str(rec_phone_val or "").strip()
+        info["receiver_name"] = _normalize_receiver_name(rec_name) if rec_name else (shop_name or "")
+        info["receiver_phone"] = LMT_RECEIVER_PHONE
         info["receiver_address"] = rec_addr
     else:
-        info["receiver_name"] = shop_name if shop_name else ""
-        info["receiver_phone"] = ""
+        info["receiver_name"] = _normalize_receiver_name(shop_name) if shop_name else ""
+        info["receiver_phone"] = LMT_RECEIVER_PHONE
         info["receiver_address"] = ""
 
     # 提取商品项
@@ -120,6 +109,11 @@ def parse_lmt_excel(excel_path: str, filename: str = "") -> Tuple[Dict[str, str]
                 "remark": "",
             }
             if item["item_code"] and item["item_name"]:
+                try:
+                    if float(item["quantity"]) <= 0:
+                        continue
+                except (ValueError, TypeError):
+                    pass
                 items.append(item)
 
     return info, items

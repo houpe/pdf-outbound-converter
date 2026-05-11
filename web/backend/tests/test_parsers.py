@@ -102,7 +102,7 @@ class TestParseLmtExcel:
         assert header["supplier_org"] == "中央厨房"
         assert header["order_no"] == "PS2512210002001"
         assert header["receiver_name"] == "张三"
-        assert header["receiver_phone"] == "13800138000"
+        assert header["receiver_phone"] == "18888888888"
         assert header["receiver_address"] == "北京市朝阳区测试路1号"
 
         # Should parse items from row 2 (first item) and row 10 (second item)
@@ -261,3 +261,10 @@ class TestParseHlmcExcel:
         assert len(items) == 1
         # Quantity should be converted to integer
         assert items[0]["quantity"] == "10"
+
+    def test_parse_hlmc_single_char_receiver_name_duplicated(self):
+        """Test that HLMC parser uses _normalize_receiver_name for receiver names."""
+        from parsers.base import _normalize_receiver_name
+        assert _normalize_receiver_name("张") == "张张"
+        assert _normalize_receiver_name("张三") == "张三"
+        assert _normalize_receiver_name("") == ""

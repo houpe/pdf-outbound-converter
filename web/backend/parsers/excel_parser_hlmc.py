@@ -3,15 +3,15 @@ WMS 转换服务 Excel 解析器 - 欢乐牧场
 解析欢乐牧场 Excel 出库单。
 """
 
-import json
 import os
-import threading
 from datetime import date
 from typing import Dict, List, Tuple
 
 import openpyxl
 
 from config import HLMC_RECEIVERS
+from database import get_hlmc_order
+from parsers.base import _normalize_receiver_name
 
 SHOP_ABBREVIATIONS = {
     "金桥": "JQ",
@@ -19,28 +19,6 @@ SHOP_ABBREVIATIONS = {
     "金银潭": "JYT",
     "金银屯": "JYT",
 }
-
-COUNTER_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_counters.json")
-HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", "hlmc_history.json")
-_file_lock = threading.Lock()
-
-
-def _load_json(path: str) -> dict:
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            pass
-    return {}
-
-
-def _save_json(path: str, data: dict):
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except:
-        pass
 
 
 def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]]]:
@@ -82,7 +60,7 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
     for shop_name, rows in shop_rows.items():
         recv = _match_store(shop_name)
         for r in rows:
-            r["receiver_name"] = recv.get("name", "")
+            r["receiver_name"] = _normalize_receiver_name(recv.get("name", ""))
             r["receiver_phone"] = recv.get("phone", "")
             r["receiver_address"] = recv.get("address", "")
             r["supplier_org"] = ""
@@ -245,20 +223,6 @@ def _match_store(shop_name: str) -> Dict[str, str]:
 
 
 def _assign_order_numbers(shop_rows: Dict[str, List[dict]], today_str: str):
-    with _file_lock:
-        counters = _load_json(COUNTER_FILE)
-        history = _load_json(HISTORY_FILE)
-
-    def get_next(prefix: str) -> str:
-        if prefix not in counters:
-            counters[prefix] = {"date": today_str, "count": 0}
-        stored = counters[prefix]
-        if stored["date"] != today_str:
-            stored["date"] = today_str
-            stored["count"] = 0
-        stored["count"] += 1
-        return f"{prefix}{today_str}{stored['count']:04d}"
-
     for shop_name, rows in shop_rows.items():
         prefix = "XX"
         for key, code in SHOP_ABBREVIATIONS.items():
@@ -267,14 +231,7 @@ def _assign_order_numbers(shop_rows: Dict[str, List[dict]], today_str: str):
                 break
 
         items_sig = sorted([f"{r['remark']}|{r['item_code']}|{r['quantity']}" for r in rows])
-        sig = f"{shop_name}|{today_str}|{'__'.join(items_sig)}"
+        signature = f"{shop_name}|{today_str}|{'__'.join(items_sig)}"
 
-        order_no = history.get(prefix, {}).get(sig)
-        if order_no is None:
-            order_no = get_next(prefix)
-            history.setdefault(prefix, {})[sig] = order_no
+        order_no = get_hlmc_order(shop_name, today_str, signature, prefix)
         shop_rows[shop_name] = [(r | {"order_no": order_no}) for r in rows]
-
-    with _file_lock:
-        _save_json(COUNTER_FILE, counters)
-        _save_json(HISTORY_FILE, history)

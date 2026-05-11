@@ -14,9 +14,62 @@ const FALLBACK_TEMPLATES = {
   hlmc: { name: '欢乐牧场', accept: '.xlsx,.xls' },
 }
 
-const CURRENT_VERSION = 'v3.9'
+const FALLBACK_VERSION = 'v4.2'
+
+function VersionModal({ versionHistory, currentVersion, onClose }) {
+  return (
+    <div className="version-overlay" onClick={onClose}>
+      <div className="version-modal" onClick={e => e.stopPropagation()}>
+        <div className="version-modal__header">
+          <h3>版本更新记录</h3>
+          <button className="version-modal__close" onClick={onClose} type="button">✕</button>
+        </div>
+        <div className="version-modal__body">
+          {versionHistory.map(v => (
+            <div key={v.version} className={`version-entry ${v.version === currentVersion ? 'current' : ''}`}>
+              <div className="version-entry__header">
+                <div className="version-entry__version">
+                  <span className={`version-tag ${v.version === currentVersion ? 'current' : ''}`}>{v.version}</span>
+                  <span className="version-date">{v.date}</span>
+                </div>
+                {v.version === currentVersion ? <span className="version-badge-latest">当前</span> : null}
+              </div>
+              <ul className="version-entry__changes">
+                {v.changes.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const CURRENT_VERSION = 'v4.2'
 
 const VERSION_HISTORY = [
+  {
+    version: 'v4.2',
+    date: '2026-05-11 13:23',
+    changes: [
+      '三家模板统一优化：商品数量为 0 或负数时自动排除，不进入转换结果',
+    ],
+  },
+  {
+    date: '2026-05-10 00:00',
+    changes: [
+      '三家模板收件人姓名优化：单字姓名自动重复为双字（如"张"→"张张"）',
+    ],
+  },
+  {
+    version: 'v4.0',
+    date: '2026-05-07 00:00',
+    changes: [
+      '黎明屯铁锅炖模板：收件人电话统一固定为 18888888888',
+      '新增 190+ pytest 测试套件覆盖全模块',
+      '前端架构重构：组件化拆分 + lib 模块统一管理',
+    ],
+  },
   {
     version: 'v3.9',
     date: '2025-05-02 12:00',
@@ -143,35 +196,6 @@ const VERSION_HISTORY = [
   },
 ]
 
-function VersionModal({ onClose }) {
-  return (
-    <div className="version-overlay" onClick={onClose}>
-      <div className="version-modal" onClick={e => e.stopPropagation()}>
-        <div className="version-modal__header">
-          <h3>版本更新记录</h3>
-          <button className="version-modal__close" onClick={onClose} type="button">✕</button>
-        </div>
-        <div className="version-modal__body">
-          {VERSION_HISTORY.map(v => (
-            <div key={v.version} className={`version-entry ${v.version === CURRENT_VERSION ? 'current' : ''}`}>
-              <div className="version-entry__header">
-                <div className="version-entry__version">
-                  <span className={`version-tag ${v.version === CURRENT_VERSION ? 'current' : ''}`}>{v.version}</span>
-                  <span className="version-date">{v.date}</span>
-                </div>
-                {v.version === CURRENT_VERSION ? <span className="version-badge-latest">当前</span> : null}
-              </div>
-              <ul className="version-entry__changes">
-                {v.changes.map((c, i) => <li key={i}>{c}</li>)}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 const getAcceptExts = (accept) => accept.split(',').map(s => s.trim())
 
 export default function ConvertPage({ onOpenSplit }) {
@@ -184,12 +208,24 @@ export default function ConvertPage({ onOpenSplit }) {
   const [missingCodes, setMissingCodes] = useState(null)
   const [versionShow, setVersionShow] = useState(false)
   const [durationMs, setDurationMs] = useState(null)
+  const [currentVersion, setCurrentVersion] = useState(FALLBACK_VERSION)
+  const [versionHistory, setVersionHistory] = useState([])
 
   const addLine = useCallback((msg, type = 'info') => {
     setLogLines(prev => [
       ...prev,
       { msg, type, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` },
     ])
+  }, [])
+
+  useEffect(() => {
+    apiClient.get('/version')
+      .then(res => {
+        const data = res.data
+        if (data.version) setCurrentVersion(data.version)
+        if (Array.isArray(data.history)) setVersionHistory(data.history)
+      })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -340,7 +376,7 @@ export default function ConvertPage({ onOpenSplit }) {
         <header className="convert-header">
           <div className="convert-header-badges">
             <div className="convert-logo-badge"><IconSparkle /><span>出库单转换</span></div>
-            <button className="convert-version-badge" onClick={() => setVersionShow(true)} type="button">{CURRENT_VERSION}</button>
+            <button className="convert-version-badge" onClick={() => setVersionShow(true)} type="button">{currentVersion}</button>
           </div>
           <h1 className="convert-title">PDF/Excel 出库单 <em>转 Excel</em></h1>
           <p className="convert-subtitle">选择模板，上传文件，一键生成标准 OMS 出库表格</p>
@@ -416,7 +452,7 @@ export default function ConvertPage({ onOpenSplit }) {
         />
       ) : null}
 
-      {versionShow ? <VersionModal onClose={() => setVersionShow(false)} /> : null}
+      {versionShow ? <VersionModal versionHistory={versionHistory} currentVersion={currentVersion} onClose={() => setVersionShow(false)} /> : null}
     </div>
   )
 }
