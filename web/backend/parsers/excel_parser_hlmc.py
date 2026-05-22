@@ -216,9 +216,9 @@ def _parse_format_a(ws, headers: dict) -> Dict[str, List[dict]]:
 
 
 def _match_store(shop_name: str) -> Dict[str, str]:
-    for key, recv in HLMC_RECEIVERS.items():
+    for key in ("银泰", "金银潭", "金桥"):
         if key in shop_name:
-            return recv
+            return HLMC_RECEIVERS.get(key, {})
     return {}
 
 
