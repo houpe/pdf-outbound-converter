@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 
 import openpyxl
 
-from parsers.base import _extract_shop_name, _find_row_label, _normalize_receiver_name, search_all_cols
+from parsers.base import _extract_shop_name, _find_row_label, _normalize_receiver_name, _strip_spaces, search_all_cols
 
 LMT_RECEIVER_PHONE = "18888888888"
 
@@ -24,7 +24,7 @@ def parse_lmt_excel(excel_path: str, filename: str = "") -> Tuple[Dict[str, str]
     cells = search_all_cols(ws, "收货机构")
     info["receiver_org"] = ""
     for r, c in cells:
-        val = str(ws.cell(row=r, column=c + 1).value or "").strip()
+        val = _strip_spaces(str(ws.cell(row=r, column=c + 1).value or "").strip())
         if val and val != "订货机构":
             info["receiver_org"] = val
             break
@@ -33,7 +33,7 @@ def parse_lmt_excel(excel_path: str, filename: str = "") -> Tuple[Dict[str, str]
     cells = search_all_cols(ws, "供货机构")
     info["supplier_org"] = ""
     for r, c in cells:
-        val = str(ws.cell(row=r, column=c + 1).value or "").strip()
+        val = _strip_spaces(str(ws.cell(row=r, column=c + 1).value or "").strip())
         if val and val != "送货机构":
             info["supplier_org"] = val
             break
@@ -42,19 +42,19 @@ def parse_lmt_excel(excel_path: str, filename: str = "") -> Tuple[Dict[str, str]
     r_no = _find_row_label(ws, {"单据号"})
     info["order_no"] = ""
     if r_no:
-        info["order_no"] = str(ws.cell(row=r_no, column=2).value or "").strip()
+        info["order_no"] = _strip_spaces(str(ws.cell(row=r_no, column=2).value or "").strip())
 
     # 提取收货人信息
     r_rec = _find_row_label(ws, {"收货人"})
     if r_rec:
-        rec_name = str(ws.cell(row=r_rec, column=2).value or "").strip()
+        rec_name = _strip_spaces(str(ws.cell(row=r_rec, column=2).value or "").strip())
         cells = search_all_cols(ws, "收货地址")
         rec_addr = ""
         if cells:
             for rr, cc in cells:
                 v = ws.cell(row=rr, column=cc + 1).value
                 if v is not None:
-                    rec_addr = str(v).strip()
+                    rec_addr = _strip_spaces(str(v).strip())
                     break
 
         info["receiver_name"] = _normalize_receiver_name(rec_name) if rec_name else (shop_name or "")

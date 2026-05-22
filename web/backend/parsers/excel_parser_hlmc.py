@@ -11,7 +11,7 @@ import openpyxl
 
 from config import HLMC_RECEIVERS
 from database import get_hlmc_order
-from parsers.base import _normalize_receiver_name
+from parsers.base import _normalize_receiver_name, _strip_spaces
 
 SHOP_ABBREVIATIONS = {
     "金桥": "JQ",
@@ -60,9 +60,9 @@ def parse_hlmc_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, st
     for shop_name, rows in shop_rows.items():
         recv = _match_store(shop_name)
         for r in rows:
-            r["receiver_name"] = _normalize_receiver_name(recv.get("name", ""))
-            r["receiver_phone"] = recv.get("phone", "")
-            r["receiver_address"] = recv.get("address", "")
+            r["receiver_name"] = _normalize_receiver_name(_strip_spaces(recv.get("name", "")))
+            r["receiver_phone"] = _strip_spaces(recv.get("phone", ""))
+            r["receiver_address"] = _strip_spaces(recv.get("address", ""))
             r["supplier_org"] = ""
             r["order_date"] = ""
             all_records.append(r)
@@ -154,7 +154,7 @@ def _parse_format_b(ws, headers: dict) -> Dict[str, List[dict]]:
             "spec": _get_val(ws, r, col_spec),
             "category": "",
             "remark": _get_val(ws, r, col_remark),
-            "receiver_org": shop_name,
+            "receiver_org": _strip_spaces(shop_name),
         }
         shop_rows.setdefault(shop_name, []).append(row_data)
 
@@ -174,12 +174,12 @@ def _parse_format_a(ws, headers: dict) -> Dict[str, List[dict]]:
     shop_cols: Dict[int, str] = {}
     for c in range(shop_start + 1, col_surplus):
         v = str(ws.cell(row=1, column=c).value or "").strip()
-        if v:
+        if v and any(kw in v for kw in ("银泰", "金银潭", "金桥")):
             shop_cols[c] = v
     if not shop_cols:
         for c in range(1, col_surplus):
             v = str(ws.cell(row=1, column=c).value or "").strip()
-            if v:
+            if v and any(kw in v for kw in ("银泰", "金银潭", "金桥")):
                 shop_cols[c] = v
 
     shop_rows: Dict[str, List[dict]] = {}
@@ -209,7 +209,7 @@ def _parse_format_a(ws, headers: dict) -> Dict[str, List[dict]]:
                 "spec": _get_val(ws, r, col_spec),
                 "category": "",
                 "remark": _get_val(ws, r, col_remark),
-                "receiver_org": shop_name,
+                "receiver_org": _strip_spaces(shop_name),
             })
 
     return shop_rows

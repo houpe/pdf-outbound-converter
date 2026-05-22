@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 
 import pdfplumber
 
-from parsers.base import _extract_header_value, _normalize_receiver_name
+from parsers.base import _extract_header_value, _normalize_receiver_name, _strip_spaces
 
 
 def extract_pdf_data(pdf_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]]]:
@@ -25,13 +25,13 @@ def extract_pdf_data(pdf_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]
 def parse_header(text: str) -> Dict[str, str]:
     """使用正则表达式从 PDF 文本中提取表头字段"""
     info = {}
-    info["order_no"] = _extract_header_value(text, "单据编号").split()[0] if _extract_header_value(text, "单据编号") else ""
-    info["receiver_org"] = _extract_header_value(text, "收货机构")
-    info["supplier_org"] = _extract_header_value(text, "供货机构")
-    info["receiver_name"] = _normalize_receiver_name(_extract_header_value(text, "收货人"))
-    info["receiver_phone"] = _extract_header_value(text, "收货电话")
-    info["receiver_address"] = _extract_header_value(text, "收货地址")
-    info["order_date"] = _extract_header_value(text, "订单日期").split()[0] if _extract_header_value(text, "订单日期") else ""
+    info["order_no"] = _strip_spaces(_extract_header_value(text, "单据编号").split()[0] if _extract_header_value(text, "单据编号") else "")
+    info["receiver_org"] = _strip_spaces(_extract_header_value(text, "收货机构"))
+    info["supplier_org"] = _strip_spaces(_extract_header_value(text, "供货机构"))
+    info["receiver_name"] = _normalize_receiver_name(_strip_spaces(_extract_header_value(text, "收货人")))
+    info["receiver_phone"] = _strip_spaces(_extract_header_value(text, "收货电话"))
+    info["receiver_address"] = _strip_spaces(_extract_header_value(text, "收货地址"))
+    info["order_date"] = _strip_spaces(_extract_header_value(text, "订单日期").split()[0] if _extract_header_value(text, "订单日期") else "")
     return info
 
 

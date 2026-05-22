@@ -57,3 +57,10 @@ def _normalize_receiver_name(name: str) -> str:
     if len(stripped) == 1:
         return stripped * 2
     return stripped
+
+
+def _strip_spaces(val: str) -> str:
+    """剔除字符串中的所有空格"""
+    if not val:
+        return ""
+    return val.replace(" ", "").replace("\u3000", "")
