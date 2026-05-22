@@ -214,6 +214,28 @@ def get_logs_stats():
     }
 
 
+@app.get("/api/logs/errors")
+def get_logs_errors(limit: int = 50):
+    from config import LOG_FILE
+    if not LOG_FILE.exists():
+        return {"errors": []}
+    import json
+    entries = []
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+                if entry.get("status") == "error":
+                    entries.append(entry)
+            except json.JSONDecodeError:
+                continue
+    entries.reverse()
+    return {"errors": entries[:limit]}
+
+
 # --- 拆零配置 CRUD ---
 
 

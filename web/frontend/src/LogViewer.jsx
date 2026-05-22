@@ -25,6 +25,8 @@ function StatCard({ label, value, icon, color }) {
 export default function LogViewer({ onBack }) {
   const [stats, setStats] = useState(null)
   const [statsLoading, setStatsLoading] = useState(true)
+  const [errors, setErrors] = useState([])
+  const [errorsLoading, setErrorsLoading] = useState(true)
 
   const fetchStats = useCallback(() => {
     setStatsLoading(true)
@@ -35,7 +37,16 @@ export default function LogViewer({ onBack }) {
       .finally(() => setStatsLoading(false))
   }, [])
 
-  useEffect(() => { fetchStats() }, [fetchStats])
+  const fetchErrors = useCallback(() => {
+    setErrorsLoading(true)
+    fetch(`${API_BASE}/logs/errors`)
+      .then(res => res.ok ? res.json() : Promise.reject())
+      .then(data => setErrors(data.errors || []))
+      .catch(() => setErrors([]))
+      .finally(() => setErrorsLoading(false))
+  }, [])
+
+  useEffect(() => { fetchStats(); fetchErrors() }, [fetchStats, fetchErrors])
 
   const successRate = useMemo(() => {
     if (!stats || stats.total_conversions === 0) return '-'
@@ -100,6 +111,39 @@ export default function LogViewer({ onBack }) {
                     <td>{t.files}</td>
                     <td>{t.items}</td>
                     <td>{t.stores}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* ===== 错误日志 ===== */}
+      {errorsLoading ? (
+        <div className="lv-stats-loading">加载错误日志…</div>
+      ) : errors.length > 0 && (
+        <section className="lv-errors-section">
+          <h3 className="lv-errors-section__title">错误日志（最近 {errors.length} 条）</h3>
+          <div className="lv-errors-table-wrap">
+            <table className="lv-errors-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>时间</th>
+                  <th>模板</th>
+                  <th>文件</th>
+                  <th>错误信息</th>
+                </tr>
+              </thead>
+              <tbody>
+                {errors.map((e, i) => (
+                  <tr key={i} className="lv-errors-row">
+                    <td className="lv-errors-index">{i + 1}</td>
+                    <td className="lv-errors-time">{e.timestamp ? e.timestamp.replace('T', ' ').substring(0, 19) : '-'}</td>
+                    <td className="lv-errors-tmpl">{e.template_name || e.template_key || '-'}</td>
+                    <td className="lv-errors-files">{Array.isArray(e.file_names) ? e.file_names.join(', ') : (e.file_names || '-')}</td>
+                    <td className="lv-errors-msg">{e.error || '-'}</td>
                   </tr>
                 ))}
               </tbody>
