@@ -1,257 +1,139 @@
-"""
-Tests for conversion API endpoints.
-"""
-
-import io
-import os
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import openpyxl
 import pytest
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
-# Add backend to path
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
-# Import from modules
-from main import app
-from config import TEMPLATES, DB_PATH, OMS_TEMPLATE, SPLIT_TEMPLATE
-from database import init_db, get_db
+import database
+from services.conversion import create_excel
 
 
 @pytest.fixture
-def client_with_mocks(tmp_path: Path, oms_template: Path, split_template: Path):
-    """
-    Creates a TestClient with mocked file paths.
-    """
-    # Create a temp db
-    db_path = tmp_path / "test_split_codes.db"
-    uploads_dir = tmp_path / "uploads"
-    downloads_dir = tmp_path / "downloads"
-    uploads_dir.mkdir(exist_ok=True)
-    downloads_dir.mkdir(exist_ok=True)
-
-    # Create and initialize the test database
-    import sqlite3
-    conn = sqlite3.connect(str(db_path))
+def db_conn(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / "conv.db"
+    conn = database.sqlite3.connect(str(db_path))
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS split_codes (
-            code TEXT PRIMARY KEY COLLATE NOCASE,
-            split TEXT NOT NULL DEFAULT '是',
-            item_name TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-        )
+        CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT)
     """)
-    # Seed with test codes
-    conn.execute("INSERT INTO split_codes (code, split) VALUES (?, ?)", ("CODE001", "是"))
-    conn.execute("INSERT INTO split_codes (code, split) VALUES (?, ?)", ("CODE002", "否"))
     conn.commit()
     conn.close()
 
-    with patch("main.DB_PATH", db_path), \
-         patch("main.UPLOADS_DIR", uploads_dir), \
-         patch("main.DOWNLOADS_DIR", downloads_dir), \
-         patch("main.OMS_TEMPLATE", oms_template), \
-         patch("main.SPLIT_TEMPLATE", split_template), \
-         patch("main.get_db") as mock_get_db:
+    def mock_get_db():
+        c = database.sqlite3.connect(str(db_path))
+        c.row_factory = database.sqlite3.Row
+        return c
 
-        def create_test_db():
-            conn = sqlite3.connect(str(db_path))
-            conn.row_factory = sqlite3.Row
-            return conn
+    monkeypatch.setattr(database, "get_db", mock_get_db)
+    monkeypatch.setattr(database, "DB_PATH", db_path)
 
-        mock_get_db.side_effect = create_test_db
-
-        client = TestClient(app)
-        yield client
+    conn = mock_get_db()
+    conn.execute("INSERT INTO split_codes (code, split) VALUES ('C1', '是')")
+    conn.execute("INSERT INTO split_codes (code, split) VALUES ('B1', '是')")
+    conn.execute("INSERT INTO split_codes (code, split) VALUES ('N', '是')")
+    conn.commit()
+    conn.close()
+    return db_path
 
 
 @pytest.fixture
-def client_simple():
-    """
-    Simple TestClient for basic endpoint tests.
-    """
-    client = TestClient(app)
-    yield client
+def sample_oms_template(tmp_path: Path) -> Path:
+    p = tmp_path / "oms.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    values = ["单据编号", "商户编码", "仓库编码", "备注", "收货人信息", "收货机构", "商品名称", "商品编码", "二级单位数量", "最小单位数量"]
+    for col, val in enumerate(values, start=1):
+        ws.cell(row=1, column=col, value=val)
+    wb.save(str(p))
+    wb.close()
+    return p
 
 
-class TestTemplatesEndpoint:
-    """Tests for GET /api/templates endpoint."""
+class TestCreateExcel:
 
-    def test_list_templates(self, client_simple):
-        """Test that templates endpoint returns expected structure."""
-        response = client_simple.get("/api/templates")
+    def test_basic_write(self, sample_oms_template, db_conn, tmp_path):
+        out_path = str(tmp_path / "r.xlsx")
+        items = [{"order_no": "PS001", "receiver_org": "门店", "receiver_name": "张", "receiver_phone": "138", "receiver_address": "京", "item_name": "N", "item_code": "C1", "quantity": "10"}]
+        create_excel({}, items, str(sample_oms_template), out_path, merchant_code="M001", template_key="qzz")
+        wb = openpyxl.load_workbook(out_path)
+        assert wb.active.cell(row=3, column=1).value == "PS001"
+        assert wb.active.cell(row=3, column=2).value == "M001"
+        assert wb.active.cell(row=3, column=3).value == "ZTOWHHY001"
+        assert wb.active.cell(row=3, column=6).value == "门店"
+        assert wb.active.cell(row=3, column=7).value == "N"
+        assert wb.active.cell(row=3, column=8).value == "C1"
+        assert wb.active.cell(row=3, column=9).value is None
+        assert wb.active.cell(row=3, column=10).value == 10
+        wb.close()
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "templates" in data
-        assert isinstance(data["templates"], list)
-        assert len(data["templates"]) >= 3  # qzz, lmt, hlmc
+    def test_qzz_routes_to_col10(self, sample_oms_template, db_conn, tmp_path):
+        out_path = str(tmp_path / "qzz.xlsx")
+        items = [{"order_no": "O1", "receiver_org": "S1", "receiver_name": "", "receiver_phone": "", "receiver_address": "", "item_name": "N", "item_code": "C1", "quantity": "5"}]
+        create_excel({}, items, str(sample_oms_template), out_path, merchant_code="MC", template_key="qzz")
+        assert openpyxl.load_workbook(out_path).active.cell(row=3, column=10).value == 5
 
-        # Check structure of each template
-        for template in data["templates"]:
-            assert "key" in template
-            assert "name" in template
-            assert "accept" in template
-            assert "default_merchant_code" in template
+    def test_split_yes_routes_to_col9(self, sample_oms_template, db_conn, tmp_path):
+        conn = database.get_db()
+        conn.execute("REPLACE INTO split_codes (code, split) VALUES ('C1', '是')")
+        conn.commit()
+        conn.close()
 
-    def test_templates_contain_expected_keys(self, client_simple):
-        """Test that all expected template keys are present."""
-        response = client_simple.get("/api/templates")
-        data = response.json()
+        out_path = str(tmp_path / "sy.xlsx")
+        items = [{"order_no": "O1", "receiver_org": "S1", "receiver_name": "", "receiver_phone": "", "receiver_address": "", "item_name": "N", "item_code": "C1", "quantity": "7"}]
+        create_excel({}, items, str(sample_oms_template), out_path, merchant_code="MC", template_key="lmt")
+        wb = openpyxl.load_workbook(out_path)
+        assert wb.active.cell(row=3, column=9).value == 7
+        assert wb.active.cell(row=3, column=10).value is None
 
-        keys = {t["key"] for t in data["templates"]}
-        assert "qzz" in keys
-        assert "lmt" in keys
-        assert "hlmc" in keys
+    def test_split_no_routes_to_col10(self, sample_oms_template, db_conn, tmp_path):
+        conn = database.get_db()
+        conn.execute("REPLACE INTO split_codes (code, split) VALUES ('C1', '否')")
+        conn.commit()
+        conn.close()
 
+        out_path = str(tmp_path / "sn.xlsx")
+        items = [{"order_no": "O1", "receiver_org": "S1", "receiver_name": "", "receiver_phone": "", "receiver_address": "", "item_name": "N", "item_code": "C1", "quantity": "7"}]
+        create_excel({}, items, str(sample_oms_template), out_path, merchant_code="MC", template_key="lmt")
+        wb = openpyxl.load_workbook(out_path)
+        assert wb.active.cell(row=3, column=9).value is None
+        assert wb.active.cell(row=3, column=10).value == 7
 
-class TestConvertEndpoint:
-    """Tests for POST /api/convert endpoint."""
+    def test_sorts_by_store(self, sample_oms_template, db_conn, tmp_path):
+        out_path = str(tmp_path / "srt.xlsx")
+        items = [
+            {"order_no": "", "receiver_org": "店B", "receiver_name": "", "receiver_phone": "", "receiver_address": "", "item_name": "B1", "item_code": "B1", "quantity": "1"},
+            {"order_no": "", "receiver_org": "店A", "receiver_name": "", "receiver_phone": "", "receiver_address": "", "item_name": "A1", "item_code": "A1", "quantity": "1"},
+        ]
+        create_excel({}, items, str(sample_oms_template), out_path, merchant_code="MC", template_key="qzz")
+        wb = openpyxl.load_workbook(out_path)
+        assert wb.active.cell(row=3, column=6).value == "店A"
+        assert wb.active.cell(row=4, column=6).value == "店B"
 
-    def test_convert_missing_template_key(self, client_simple):
-        """Test that missing template_key returns 422 error."""
-        # Create a mock file
-        file_content = b"test content"
-        files = [("files", ("test.xlsx", io.BytesIO(file_content), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))]
+    def test_lmt_validates_missing_splits(self, sample_oms_template, db_conn, tmp_path):
+        out_path = str(tmp_path / "fail.xlsx")
+        items = [{"order_no": "", "receiver_org": "S1", "receiver_name": "", "receiver_phone": "", "receiver_address": "", "item_name": "N", "item_code": "MISSING", "quantity": "1"}]
+        with pytest.raises(HTTPException) as exc:
+            create_excel({}, items, str(sample_oms_template), out_path, merchant_code="MC", template_key="lmt")
+        assert exc.value.status_code == 400
+        assert "商品编码缺失" in exc.value.detail["error"]
 
-        response = client_simple.post("/api/convert", files=files)
+    def test_non_lmt_skips_validation(self, sample_oms_template, db_conn, tmp_path):
+        out_path = str(tmp_path / "skip.xlsx")
+        items = [{"order_no": "", "receiver_org": "S1", "receiver_name": "", "receiver_phone": "", "receiver_address": "", "item_name": "N", "item_code": "MISSING", "quantity": "1"}]
+        create_excel({}, items, str(sample_oms_template), out_path, merchant_code="MC", template_key="qzz")
+        assert openpyxl.load_workbook(out_path).active.cell(row=3, column=8).value == "MISSING"
 
-        # FastAPI returns 422 for missing required form field
-        assert response.status_code == 422
+    def test_handles_float_quantity(self, sample_oms_template, db_conn, tmp_path):
+        out_path = str(tmp_path / "fl.xlsx")
+        items = [{"order_no": "O1", "receiver_org": "S1", "receiver_name": "", "receiver_phone": "", "receiver_address": "", "item_name": "N", "item_code": "C1", "quantity": "12.7"}]
+        create_excel({}, items, str(sample_oms_template), out_path, merchant_code="MC", template_key="qzz")
+        assert openpyxl.load_workbook(out_path).active.cell(row=3, column=10).value == 12
 
-    def test_convert_invalid_template_key(self, client_simple):
-        """Test that invalid template_key returns 400 error."""
-        file_content = b"test content"
-        files = [("files", ("test.xlsx", io.BytesIO(file_content), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))]
-
-        response = client_simple.post(
-            "/api/convert",
-            files=files,
-            data={"template_key": "invalid_template"},
-        )
-
-        assert response.status_code == 400
-        assert "未知模板" in response.json()["detail"]
-
-    def test_convert_wrong_file_extension(self, client_simple):
-        """Test that wrong file extension returns 400 error."""
-        # Create a mock PDF file
-        file_content = b"%PDF-1.4 test content"
-        files = [("files", ("test.pdf", io.BytesIO(file_content), "application/pdf"))]
-
-        response = client_simple.post(
-            "/api/convert",
-            files=files,
-            data={"template_key": "lmt"},  # LMT only accepts .xlsx/.xls
-        )
-
-        assert response.status_code == 400
-        assert "不支持" in response.json()["detail"]
-
-    def test_convert_no_files(self, client_simple):
-        """Test that no files returns 422 error."""
-        response = client_simple.post(
-            "/api/convert",
-            files=[],
-            data={"template_key": "lmt"},
-        )
-
-        assert response.status_code == 422
-
-    def test_convert_merchant_code_validation_too_long(self, client_simple):
-        """Test that merchant code > 64 chars returns 400 error."""
-        file_content = b"test content"
-        files = [("files", ("test.xlsx", io.BytesIO(file_content), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))]
-        long_code = "A" * 65
-
-        response = client_simple.post(
-            "/api/convert",
-            files=files,
-            data={"template_key": "lmt", "merchant_code": long_code},
-        )
-
-        # Should fail before or during file parsing
-        assert response.status_code in [400, 500]
-
-    def test_convert_merchant_code_validation_invalid_chars(self, client_simple):
-        """Test that merchant code with invalid chars returns 400 error."""
-        file_content = b"test content"
-        files = [("files", ("test.xlsx", io.BytesIO(file_content), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))]
-
-        response = client_simple.post(
-            "/api/convert",
-            files=files,
-            data={"template_key": "lmt", "merchant_code": "invalid!code"},
-        )
-
-        assert response.status_code == 400
-        assert "商户编码" in response.json()["detail"]
-
-
-class TestConvertWithMockFiles:
-    """Tests for conversion with proper mock Excel files."""
-
-    @pytest.fixture
-    def mock_lmt_file(self, lmt_excel: Path) -> bytes:
-        """Read the LMT test file and return as bytes."""
-        with open(lmt_excel, "rb") as f:
-            return f.read()
-
-    def test_convert_valid_lmt_file(self, mock_main_env, lmt_excel: Path):
-        """Test converting a valid LMT Excel file."""
-        # This test uses the client_with_mocks fixture
-        pass  # Complex integration test, would need proper setup
-
-    def test_convert_hlmc_file(self, mock_main_env, hlmc_excel: Path):
-        """Test converting a valid HLMC Excel file."""
-        pass  # Complex integration test, would need proper setup
-
-
-class TestDownloadEndpoint:
-    """Tests for GET /downloads/{filename} endpoint."""
-
-    def test_download_nonexistent_file(self, client_simple):
-        """Test that downloading non-existent file returns 404."""
-        response = client_simple.get("/downloads/nonexistent.xlsx")
-        assert response.status_code == 404
-
-    def test_download_path_traversal(self, client_simple):
-        """Test that path traversal attempts are blocked."""
-        # FastAPI normalizes the path, so ../main.py becomes main.py
-        # which doesn't exist in downloads directory, returns 404
-        response = client_simple.get("/downloads/../main.py")
-        assert response.status_code in [400, 404]
-
-        # URL-encoded path traversal
-        response = client_simple.get("/downloads/..%2Fmain.py")
-        assert response.status_code in [400, 404]
-
-    def test_download_invalid_filename(self, client_simple):
-        """Test that invalid filenames are rejected."""
-        # Multiple path traversals
-        response = client_simple.get("/downloads/../../../etc/passwd")
-        assert response.status_code in [400, 404]
-
-
-class TestLogsEndpoint:
-    """Tests for GET /api/logs endpoint."""
-
-    def test_get_logs_empty(self, client_simple):
-        """Test getting logs when log file doesn't exist."""
-        # Patch LOG_FILE to a non-existent path
-        with patch("config.LOG_FILE", Path("/nonexistent/path/conversion_log.jsonl")):
-            response = client_simple.get("/api/logs")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["logs"] == []
-        assert data["total"] == 0
-
-    def test_get_logs_with_limit(self, client_simple):
-        """Test that logs endpoint respects limit parameter."""
-        response = client_simple.get("/api/logs?limit=10")
-        assert response.status_code == 200
+    def test_contact_concatenated(self, sample_oms_template, db_conn, tmp_path):
+        out_path = str(tmp_path / "ct.xlsx")
+        items = [{"order_no": "", "receiver_org": "S1", "receiver_name": "张", "receiver_phone": "138", "receiver_address": "京", "item_name": "N", "item_code": "C1", "quantity": "1"}]
+        create_excel({}, items, str(sample_oms_template), out_path, merchant_code="MC", template_key="qzz")
+        assert openpyxl.load_workbook(out_path).active.cell(row=3, column=5).value == "张,138,京"

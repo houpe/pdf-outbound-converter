@@ -239,11 +239,15 @@ def seed_version_history(conn: sqlite3.Connection) -> None:
 
 def get_hlmc_order(shop_name: str, today_str: str, signature: str, prefix: str) -> str:
     sql_history = "SELECT order_no FROM hlmc_history WHERE signature = ?"
-    sql_seq_update = """
+    sql_check_seq = "SELECT seq FROM hlmc_sequences WHERE date = ? AND prefix = ?"
+    sql_seq_insert = """
         INSERT INTO hlmc_sequences (date, prefix, seq)
         VALUES (?, ?, 1)
-        ON CONFLICT(date, prefix) DO UPDATE SET seq = seq + 1
-        RETURNING seq
+        ON CONFLICT(date, prefix) DO NOTHING
+    """
+    sql_seq_update = """
+        UPDATE hlmc_sequences SET seq = seq + 1
+        WHERE date = ? AND prefix = ?
     """
     sql_insert_history = """
         INSERT INTO hlmc_history (shop_name, date, signature, order_no)
@@ -256,15 +260,32 @@ def get_hlmc_order(shop_name: str, today_str: str, signature: str, prefix: str) 
         row = cur.fetchone()
         if row:
             return row["order_no"]
-
-        cur = conn.execute(sql_seq_update, (today_str, prefix))
-        row = cur.fetchone()
-        new_seq = row["seq"]
-        new_order = f"{prefix}{today_str}{new_seq:04d}"
-
-        conn.execute(sql_insert_history, (shop_name, today_str, signature, new_order))
+        
+        # 先尝试插入新序列
+        conn.execute(sql_seq_insert, (today_str, prefix))
         conn.commit()
-        return new_order
+        
+        # 查询当前序号
+        cur = conn.execute(sql_check_seq, (today_str, prefix))
+        row = cur.fetchone()
+        seq = row["seq"] if row else 1
+        
+        # 递增
+        if seq > 1:
+            conn.execute(sql_seq_update, (today_str, prefix))
+            conn.commit()
+            cur = conn.execute(sql_check_seq, (today_str, prefix))
+            row = cur.fetchone()
+            seq = row["seq"] if row else 1
+        
+        order_no = f"{prefix}{today_str}{seq:04d}"
+        
+        conn.execute(sql_insert_history, (shop_name, today_str, signature, order_no))
+        conn.commit()
+        return order_no
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

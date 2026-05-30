@@ -143,17 +143,42 @@ python3 -m pytest tests/ --cov=.            # 覆盖率报告
 ### 服务器环境
 
 - 访问地址：`https://www.houpe.top/wms/`
-- 后端路径：`/www/wwwroot/wms-api/`（端口 8000，PM2 `wms-api`）
+- 后端路径：`/www/wwwroot/wms-api/`（端口 8000）
 - 前端路径：`/www/wwwroot/address-weight-calc/wms/`
 - nginx 配置：宝塔面板 `address-weight.conf`
 
-### 一键部署脚本
+### 部署方式：Docker Compose（2026-05 从 PM2 迁移）
 
-从项目根目录执行：
+compose 文件：`/www/docker/docker-compose.yml`
+
+```yaml
+wms-api:
+  image: node:24
+  restart: always
+  working_dir: /app
+  volumes:
+    - /www/wwwroot/wms-api:/app          # 绑定挂载，Python 端
+  ports:
+    - "8000:8000"
+  entrypoint:
+    - /app/venv/bin/python3
+    - -m
+    - uvicorn
+    - main:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - "8000"
+  networks:
+    - app_net
+```
+
+容器名：`docker-wms-api-1`，查看日志：`docker logs docker-wms-api-1`
+
+### 发布脚本
 
 ```bash
-# 配置服务器信息（建议写入环境变量或 .env 文件）
-WMS_SERVER="${WMS_SERVER:-root@your-server.com}"
+WMS_SERVER="${WMS_SERVER:-root@www.houpe.top}"
 WMS_API_PATH="${WMS_API_PATH:-/www/wwwroot/wms-api}"
 WMS_FRONT_PATH="${WMS_FRONT_PATH:-/www/wwwroot/address-weight-calc/wms}"
 
@@ -161,7 +186,7 @@ WMS_FRONT_PATH="${WMS_FRONT_PATH:-/www/wwwroot/address-weight-calc/wms}"
 cd web/frontend && npm run build
 
 # 2. 部署后端（模块化后的全部文件）
-scp -r ../../web/backend/config.py ../../web/backend/config.json ../../web/backend/database.py ../../web/backend/schemas.py ../../web/backend/main.py ../../web/backend/requirements.txt "$WMS_SERVER:$WMS_API_PATH/"
+scp -r ../../web/backend/*.py ../../web/backend/*.json ../../web/backend/*.txt "$WMS_SERVER:$WMS_API_PATH/"
 scp -r ../../web/backend/parsers/ "$WMS_SERVER:$WMS_API_PATH/parsers/"
 scp -r ../../web/backend/services/ "$WMS_SERVER:$WMS_API_PATH/services/"
 scp -r ../../web/backend/middleware/ "$WMS_SERVER:$WMS_API_PATH/middleware/"
@@ -169,26 +194,14 @@ scp -r ../../web/backend/middleware/ "$WMS_SERVER:$WMS_API_PATH/middleware/"
 # 3. 部署前端
 scp -r ./dist/* "$WMS_SERVER:$WMS_FRONT_PATH/"
 
-# 4. 重启服务
-ssh "$WMS_SERVER" "pm2 restart wms-api && echo ✅ done"
+# 4. 重启容器（替代旧的 pm2 restart）
+ssh "$WMS_SERVER" "docker restart docker-wms-api-1 && echo ✅ done"
 ```
 
-### 快捷部署（单条命令）
-
-从项目 `web/frontend` 目录执行：
+### 快捷发布（单条命令）
 
 ```bash
-WMS_SERVER="${WMS_SERVER:-root@your-server.com}" && npm run build && scp -r dist/* "$WMS_SERVER:/www/wwwroot/address-weight-calc/wms/" && scp ../../web/backend/*.py ../../web/backend/*.json ../../web/backend/*.txt "$WMS_SERVER:/www/wwwroot/wms-api/" && scp -r ../../web/backend/parsers ../../web/backend/services ../../web/backend/middleware "$WMS_SERVER:/www/wwwroot/wms-api/" && ssh "$WMS_SERVER" 'pm2 restart wms-api && echo ✅ done'
-```
-
-### PM2 启动方式
-
-服务器使用 PM2 托管 FastAPI 后端，推荐启动命令：
-
-```bash
-cd /www/wwwroot/wms-api
-pm2 start 'python3 -m uvicorn main:app --host 0.0.0.0 --port 8000' --name wms-api
-pm2 save
+WMS_SERVER="${WMS_SERVER:-root@www.houpe.top}" && npm run build && scp -r dist/* "$WMS_SERVER:/www/wwwroot/address-weight-calc/wms/" && scp ../../web/backend/*.py ../../web/backend/*.json ../../web/backend/*.txt "$WMS_SERVER:/www/wwwroot/wms-api/" && scp -r ../../web/backend/parsers ../../web/backend/services ../../web/backend/middleware "$WMS_SERVER:/www/wwwroot/wms-api/" && ssh "$WMS_SERVER" 'docker restart docker-wms-api-1 && echo ✅ done'
 ```
 
 ### nginx 配置参考（已在 address-weight.conf 中）

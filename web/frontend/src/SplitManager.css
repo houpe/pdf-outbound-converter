@@ -9,10 +9,17 @@
 /* Header (workbench) */
 .sm-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   margin-bottom: var(--space-4);
-  flex-wrap: wrap;
+}
+
+.sm-header .ui-btn {
+  line-height: 1;
+}
+
+.sm-header__title {
+  padding-top: 6px;
 }
 
 .sm-header__title h2 {
@@ -20,6 +27,25 @@
   font-weight: 900;
   color: var(--color-text);
   margin: 0;
+  line-height: 1.2;
+}
+
+.sm-header .ui-btn {
+  margin-top: -2px;
+}
+
+.sm-header__title {
+  display: flex;
+  align-items: center;
+}
+
+.sm-header__title h2 {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--color-text);
+  margin: 0;
+  line-height: 1;
+  transform: translateY(-1px);
 }
 
 .sm-header__badge {

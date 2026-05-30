@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wms-api
+    restart: always
+    volumes:
+      - wms-uploads:/app/uploads
+      - wms-downloads:/app/downloads
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: wms-web
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+
+volumes:
+  wms-uploads:
+  wms-downloads:
