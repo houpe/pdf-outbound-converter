@@ -14,6 +14,11 @@
       "name": "欢乐牧场",
       "accept": ".xlsx,.xls",
       "merchant_code": "Q20260427015"
+    },
+    "yss": {
+      "name": "湖南尹三顺",
+      "accept": ".xlsx,.xls",
+      "merchant_code": "Q20260526001"
     }
   },
   "hlmc_receivers": {

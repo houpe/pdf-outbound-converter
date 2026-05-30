@@ -94,6 +94,11 @@ DEFAULT_TEMPLATES = {
         "accept": ".xlsx,.xls",
         "merchant_code": "Q20260427015",
     },
+    "yss": {
+        "name": "湖南尹三顺",
+        "accept": ".xlsx,.xls",
+        "merchant_code": "Q20260526001",
+    },
 }
 
 # 欢乐牧场默认收件人信息（可通过环境变量 HLMC_RECEIVERS_JSON 或 config.json 覆盖）

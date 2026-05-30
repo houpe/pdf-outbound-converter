@@ -20,7 +20,7 @@ from config import (
     TEMPLATES,
 )
 from database import get_split_map
-from parsers import extract_pdf_data, parse_lmt_excel, parse_hlmc_excel
+from parsers import extract_pdf_data, parse_lmt_excel, parse_hlmc_excel, parse_yss_excel
 
 
 async def _do_convert(
@@ -83,6 +83,8 @@ async def _do_convert(
                 file_header, items = parse_lmt_excel(str(upload_path), file.filename)
             elif template_key == "hlmc":
                 file_header, items = parse_hlmc_excel(str(upload_path))
+            elif template_key == "yss":
+                file_header, items = parse_yss_excel(str(upload_path))
             else:
                 file_header, items = extract_pdf_data(str(upload_path))
 
@@ -225,7 +227,7 @@ def create_excel(
 
         ws.cell(row=i, column=1, value=item_order_no)
         ws.cell(row=i, column=2, value=merchant_code)
-        ws.cell(row=i, column=3, value="ZTOWHHY001")
+        ws.cell(row=i, column=3, value="ZTOCSYH002" if template_key == "yss" else "ZTOWHHY001")
         ws.cell(row=i, column=4, value="")
         ws.cell(row=i, column=5, value=f"{item_receiver_name},{item_receiver_phone},{item_receiver_address}")
         ws.cell(row=i, column=6, value=item_receiver_org)
@@ -234,6 +236,9 @@ def create_excel(
 
         # 黔寨寨模板：数量统一放最小单位数量(Col10)
         if template_key == "qzz":
+            ws.cell(row=i, column=9, value="")
+            ws.cell(row=i, column=10, value=quantity_val)
+        elif template_key == "yss":
             ws.cell(row=i, column=9, value="")
             ws.cell(row=i, column=10, value=quantity_val)
         else:
