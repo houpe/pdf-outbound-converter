@@ -45,9 +45,18 @@ function VersionModal({ versionHistory, currentVersion, onClose }) {
   )
 }
 
-const CURRENT_VERSION = 'v4.2'
+const CURRENT_VERSION = 'v4.3'
 
 const VERSION_HISTORY = [
+  {
+    version: 'v4.3',
+    date: '2026-05-30 22:00',
+    changes: [
+      '新增湖南尹三顺模板：支持 WMS 汇总单格式 Excel 转换',
+      '新增 URL 分组访问：不同路径显示不同模板，支持可配置扩展',
+      '仓库编码 ZTOCSYH002，货主编码 Q20260526001',
+    ],
+  },
   {
     version: 'v4.2',
     date: '2026-05-11 13:23',
@@ -198,6 +207,14 @@ const VERSION_HISTORY = [
 
 const getAcceptExts = (accept) => accept.split(',').map(s => s.trim())
 
+function getGroupFromPath() {
+  const match = window.location.pathname.match(/\/wms\/([^/]+)/)
+  if (!match) return null
+  const seg = match[1]
+  if (seg === '' || seg.startsWith('#') || seg.startsWith('?') || seg.startsWith('api') || seg.startsWith('downloads')) return null
+  return seg
+}
+
 export default function ConvertPage({ onOpenSplit }) {
   const [templates, setTemplates] = useState(FALLBACK_TEMPLATES)
   const [templateKey, setTemplateKey] = useState('qzz')
@@ -210,6 +227,7 @@ export default function ConvertPage({ onOpenSplit }) {
   const [durationMs, setDurationMs] = useState(null)
   const [currentVersion, setCurrentVersion] = useState(FALLBACK_VERSION)
   const [versionHistory, setVersionHistory] = useState([])
+  const [templateGroups, setTemplateGroups] = useState(null)
 
   const addLine = useCallback((msg, type = 'info') => {
     setLogLines(prev => [
@@ -229,24 +247,45 @@ export default function ConvertPage({ onOpenSplit }) {
   }, [])
 
   useEffect(() => {
+    apiClient.get('/template-groups')
+      .then(res => {
+        if (res?.data?.groups) setTemplateGroups(res.data.groups)
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
     apiClient.get('/templates')
       .then(res => {
         const list = res?.data?.templates
         if (!Array.isArray(list) || list.length === 0) {
-          // 后端返回空数组时不要覆盖前端 fallback，否则下拉会变空
           addLine('⚠️ 模板列表为空，使用内置模板列表', 'warn')
           return
         }
+        const group = getGroupFromPath()
+        let filtered = list
+        if (group && templateGroups && templateGroups[group]) {
+          const allowed = templateGroups[group]
+          filtered = list.filter(t => allowed.includes(t.key))
+        } else if (templateGroups && Object.keys(templateGroups).length > 0) {
+          const allGrouped = new Set(Object.values(templateGroups).flat())
+          filtered = list.filter(t => !allGrouped.has(t.key))
+        }
         const map = {}
-        for (const t of list) {
+        for (const t of filtered) {
           map[t.key] = { name: t.name, accept: t.accept }
         }
+        if (Object.keys(map).length === 0) {
+          for (const t of list) {
+            map[t.key] = { name: t.name, accept: t.accept }
+          }
+        }
         setTemplates(map)
-        const firstKey = list[0]?.key
+        const firstKey = filtered[0]?.key || list[0]?.key
         if (firstKey) setTemplateKey(firstKey)
       })
       .catch(() => addLine('⚠️ 无法获取模板列表，使用内置模板列表', 'warn'))
-  }, [addLine])
+  }, [addLine, templateGroups])
 
   const template = templates[templateKey] || FALLBACK_TEMPLATES[templateKey]
   const acceptExts = useMemo(() => getAcceptExts(template?.accept || '.pdf'), [template?.accept])
@@ -439,7 +478,7 @@ export default function ConvertPage({ onOpenSplit }) {
         <footer className="convert-footer">
           <span>出库单转换工具</span><span className="footer-dot">·</span><span>Powered by WMS Converter</span>
           <span className="footer-dot">·</span>
-          <button className="footer-link" onClick={onOpenSplit} type="button">拆零管理</button>
+          {!getGroupFromPath() && <button className="footer-link" onClick={onOpenSplit} type="button">拆零管理</button>}
         </footer>
       </div>
 

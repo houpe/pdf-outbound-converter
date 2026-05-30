@@ -121,6 +121,11 @@ def seed_split_codes(conn: sqlite3.Connection) -> None:
 
 VERSION_HISTORY_DATA = [
     {
+        "version": "v4.3",
+        "date": "2026-05-30 22:00",
+        "changes": "新增湖南尹三顺模板（WMS汇总单格式Excel转换）；新增URL分组访问，不同路径显示不同模板，支持可配置扩展；仓库编码ZTOCSYH002，货主编码Q20260526001",
+    },
+    {
         "version": "v4.2",
         "date": "2026-05-11 13:23",
         "changes": "三家模板统一优化：商品数量为 0 或负数时自动排除，不进入转换结果",

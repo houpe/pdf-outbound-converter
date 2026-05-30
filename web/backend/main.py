@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 
 from config import (
     ALLOWED_ORIGINS, BASE_DIR, DOWNLOADS_DIR, DOWNLOAD_TTL_SECONDS,
-    HEADER_FIELD_LABELS, TEMPLATES, DB_PATH, OMS_TEMPLATE, SPLIT_TEMPLATE,
+    HEADER_FIELD_LABELS, TEMPLATES, TEMPLATE_GROUPS, DB_PATH, OMS_TEMPLATE, SPLIT_TEMPLATE,
 )
 from database import get_db, init_db
 from schemas import SplitCodeCreate, BatchItem
@@ -87,6 +87,11 @@ def list_templates():
             for key, cfg in TEMPLATES.items()
         ]
     }
+
+
+@app.get("/api/template-groups")
+def list_template_groups():
+    return {"groups": TEMPLATE_GROUPS}
 
 
 @app.post("/api/convert")

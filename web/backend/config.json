@@ -44,5 +44,8 @@
     "download_ttl_seconds": 86400,
     "rate_limit_window": 60,
     "rate_limit_max": 30
+  },
+  "template_groups": {
+    "ZTOCSYH002": ["yss"]
   }
 }

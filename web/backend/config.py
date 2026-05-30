@@ -146,9 +146,16 @@ def get_hlmc_receivers() -> dict:
     return DEFAULT_HLMC_RECEIVERS
 
 
+def get_template_groups() -> dict:
+    """获取模板分组配置"""
+    config = _load_config_json()
+    return config.get("template_groups", {})
+
+
 # 导出模板和收件人配置（延迟加载）
 TEMPLATES = get_templates()
 HLMC_RECEIVERS = get_hlmc_receivers()
+TEMPLATE_GROUPS = get_template_groups()
 
 # 日志字段
 LOG_FIELDS = [
