@@ -5,8 +5,9 @@
 ## 功能特性
 
 - 📄 **PDF解析**: 自动提取PDF出库单中的头部信息和商品明细
-- 📊 **多模板支持**: 内置黔寨寨、黎明屯、欢乐牧场 3种模板
-- 🔀 **商品拆零路由**: 根据 SQLite 拆零配置自动将数量分配到二级单位或最小单位
+- 📊 **多模板支持**: 内置黔寨寨、黎明屯、欢乐牧场、湖南尹三顺 4种模板
+- 🔀 **商品拆零路由**: 根据 SQLite 拆零配置自动将数量分配到二级单位或最小单位（按仓库隔离）
+- 🏭 **多仓库支持**: 仓库选择首页，不同仓库显示不同模板和拆零配置
 - 🧩 **商品拆零管理**: 支持页面内直接新增/编辑编码、切换是否拆零、保存到数据库、查看创建时间、确认删除
 - 📝 **转换日志**: 每次转换自动记录（JSONL格式），可通过 `/api/logs` 查询统计
 - 🛡️ **API限流**: 自动限制请求频率，防止滥用
@@ -18,11 +19,23 @@
 
 ## 支持的模板
 
-| 模板 | 输入格式 | 商户编码 | 说明 |
-|------|----------|----------|------|
-| 黔寨寨贵州烙锅 | PDF | Q20260427013 | 解析PDF中的头部信息和商品表格 |
-| 黎明屯铁锅炖 | Excel | Q20260427017 | 门店信息从导入模板的「收货机构」字段读取 |
-| 欢乐牧场 | Excel | Q20260427015 | 自动识别店铺列，按店铺合并输出 |
+| 模板 | 输入格式 | 商户编码 | 仓库 | 说明 |
+|------|----------|----------|------|------|
+| 黔寨寨贵州烙锅 | PDF | Q20260427013 | 武汉汉阳仓 (ZTOWHHY001) | 解析PDF中的头部信息和商品表格 |
+| 黎明屯铁锅炖 | Excel | Q20260427017 | 武汉汉阳仓 (ZTOWHHY001) | 门店信息从导入模板的「收货机构」字段读取 |
+| 欢乐牧场 | Excel | Q20260427015 | 武汉汉阳仓 (ZTOWHHY001) | 自动识别店铺列，按店铺合并输出 |
+| 湖南尹三顺 | Excel | Q20260526001 | 长沙雨花二仓 (ZTOCSYH002) | WMS汇总单格式，支持拆零管理 |
+
+## 仓库配置
+
+访问 `/wms/` 显示仓库选择首页，点击进入对应仓库。
+
+| 仓库编码 | 仓库名称 | 可用模板 |
+|----------|----------|----------|
+| ZTOWHHY001 | 武汉汉阳仓 | 黔寨寨、黎明屯、欢乐牧场 |
+| ZTOCSYH002 | 长沙雨花二仓 | 湖南尹三顺 |
+
+仓库信息在 `web/backend/config.json` 的 `warehouses` 和 `template_groups` 字段中配置，可扩展。
 
 ## 默认编码
 
@@ -38,17 +51,20 @@
 
 ### 仓库编码（输出Excel - C列 供货机构）
 
-默认值：`ZTOWHHY001`
+| 仓库 | 编码 |
+|------|------|
+| 武汉汉阳仓 | ZTOWHHY001 |
+| 长沙雨花二仓 | ZTOCSYH002 |
 
 ### 商品拆零规则
 
-商品拆零配置存储在后端 SQLite 数据库 `web/backend/split_codes.db`，通过页面底部「拆零管理」入口维护，不再从 `商品拆零模板.xlsx` 读取业务配置。
+商品拆零配置存储在后端 SQLite 数据库 `web/backend/split_codes.db`，**按仓库隔离**，通过页面底部「拆零管理」入口维护。
 
 | 是否拆零 | 数量填入列 | 说明 |
 |----------|-----------|------|
 | 是 | I列（二级单位） | 需要拆零的商品 |
 | 否 | J列（最小单位） | 直接以最小销售单位发货 |
-| 未配置 | I列（二级单位） | 默认按拆零处理 |
+| 未配置 | J列（最小单位） | 默认不拆零 |
 
 #### 拆零校验策略
 
@@ -57,6 +73,7 @@
 | 黔寨寨贵州烙锅 | 否 | 转换时不阻断 |
 | 黎明屯铁锅炖 | 是 | 缺失编码时弹窗提示，可在弹窗内选择拆零/不拆零并保存后重试 |
 | 欢乐牧场 | 否 | 转换时不阻断 |
+| 湖南尹三顺 | 否 | 仅已配置拆零的产品走二级单位，其余默认最小单位 |
 
 #### 拆零管理页面
 
@@ -80,7 +97,8 @@ wms表格转换2/
 │   │   │   ├── base.py             # 通用解析辅助函数
 │   │   │   ├── pdf_parser.py       # 黔寨寨PDF解析
 │   │   │   ├── excel_parser_lmt.py # 黎明屯Excel解析
-│   │   │   └── excel_parser_hlmc.py# 欢乐牧场Excel解析
+│   │   │   ├── excel_parser_hlmc.py# 欢乐牧场Excel解析
+│   │   │   └── excel_parser_yss.py # 湖南尹三顺Excel解析
 │   │   ├── services/       # 业务服务
 │   │   │   ├── conversion.py       # 转换核心逻辑
 │   │   │   └── logging_svc.py      # 转换日志服务
@@ -96,6 +114,7 @@ wms表格转换2/
 │   └── frontend/           # React+Vite前端
 │       ├── src/
 │       │   ├── App.jsx / App.css
+│       │   ├── features/convert/   # 转换页面（含仓库选择首页）
 │       │   ├── SplitManager.jsx / SplitManager.css
 │       │   ├── ErrorBoundary.jsx / ErrorBoundary.css
 │       │   ├── SplitToggle.jsx     # 共享拆零切换组件
@@ -142,10 +161,10 @@ python3 -m pytest tests/ --cov=.            # 覆盖率报告
 
 ### 服务器环境
 
-- 访问地址：`https://www.houpe.top/wms/`
-- 后端路径：`/www/wwwroot/wms-api/`（端口 8000）
+- 访问地址：`https://www.houpe.top/wms/`（仓库选择首页）
+- 后端路径：`/opt/wms/web/backend/`（端口 8000，systemd 管理 `wms-backend.service`）
 - 前端路径：`/www/wwwroot/address-weight-calc/wms/`
-- nginx 配置：宝塔面板 `address-weight.conf`
+- nginx 配置：`/www/server/panel/vhost/nginx/openclaw.conf`
 
 ### 部署方式：Docker Compose（2026-05 从 PM2 迁移）
 
@@ -204,13 +223,23 @@ ssh "$WMS_SERVER" "docker restart docker-wms-api-1 && echo ✅ done"
 WMS_SERVER="${WMS_SERVER:-root@www.houpe.top}" && npm run build && scp -r dist/* "$WMS_SERVER:/www/wwwroot/address-weight-calc/wms/" && scp ../../web/backend/*.py ../../web/backend/*.json ../../web/backend/*.txt "$WMS_SERVER:/www/wwwroot/wms-api/" && scp -r ../../web/backend/parsers ../../web/backend/services ../../web/backend/middleware "$WMS_SERVER:/www/wwwroot/wms-api/" && ssh "$WMS_SERVER" 'docker restart docker-wms-api-1 && echo ✅ done'
 ```
 
-### nginx 配置参考（已在 address-weight.conf 中）
+### nginx 配置参考（已在 openclaw.conf 中）
 
 ```nginx
-# WMS 前端 - /www/wwwroot/address-weight-calc/wms/
+# WMS 仓库选择首页
 location = /wms { rewrite ^/wms$ /wms/ permanent; }
-location /wms/ {
+
+# WMS 分组路由（仓库编码 URL）
+location ~ ^/wms/([A-Za-z0-9_-]+)/?$ {
     alias /www/wwwroot/address-weight-calc/wms/;
+    index index.html;
+    try_files $uri /wms/index.html;
+}
+
+# WMS 静态资源
+location ^~ /wms/ {
+    alias /www/wwwroot/address-weight-calc/wms/;
+    index index.html;
     try_files $uri $uri/ /wms/index.html;
 }
 
@@ -262,20 +291,18 @@ cat web/backend/conversion_log.jsonl | jq .
 
 ## 版本历史
 
-- v3.6 - 后端模块化重构：拆分单文件为 config/database/schemas/parsers/services/middleware；前端提取共享 Icons/SplitToggle 组件，内联样式迁移到 CSS；新增 70+ pytest 测试套件；启用 API 限流，收紧 CORS 策略
-- v3.5 - 商品拆零配置改为 SQLite 页面维护；拆零管理支持内联新增/编辑/保存、创建时间倒序、页面内确认删除；黎明屯缺失编码支持弹窗内配置并重试；仅黎明屯转换校验拆零配置
-- v3.4 - 修复拆零路由：新增模板回退查找逻辑；LMT门店信息从模板「收货机构」读取
-- v3.3 - 新增转换日志（JSONL）、拆零模板自动路由、转换成功后自动下载
-- v3.2 - 安全加固：路径遍历防护、lifespan 替换废弃 API、清理端点移除、requirements 合并
-- v3.1 - 后端优化：CORS 限定来源、动态模板获取、流式上传、TTL 清理、文件限制
-- v3.0 - 重构为Web应用（FastAPI + React），删除桌面端代码
-- v2.3 - 重构项目目录 (src/assets/templates)，欢乐牧场合并输出
-- v2.2 - 新增欢乐牧场模板
-- v2.1 - 新增黎明屯铁锅炖模板
+- v4.4 - 拆零管理按仓库隔离（ZTOWHHY001/ZTOCSYH002独立配置）；新增仓库选择首页（/wms/）；ZTOWHHY001分组（黔寨寨/黎明屯/欢乐牧场）；ZTOCSYH002新增ZBWP2139/ZBWP0185默认拆零支持
+- v4.3 - 新增湖南尹三顺模板（WMS汇总单格式Excel转换）；新增URL分组访问，不同路径显示不同模板
+- v4.2 - 三家模板统一优化：商品数量为 0 或负数时自动排除
+- v4.1 - 三家模板收件人姓名优化：单字姓名自动重复为双字
+- v4.0 - 黎明屯收件人电话固定18888888888；新增190+测试套件；前端架构重构
+- v3.9 - 欢乐牧场订单号重构（YYMMDD+4位随机数）；优化多文件累加选择逻辑
+- v3.8 - 前端架构重构：组件化拆分，双栏工作台布局，Toast通知
+- v3.7 - 首页版本号徽章，修复欢乐牧场空编码行
+- v3.6 - 后端模块化重构；新增70+pytest测试；启用API限流
+- v3.5 - 拆零配置改为SQLite页面维护；黎明屯缺失编码弹窗配置
+- v3.0 - 重构为Web应用（FastAPI + React）
 - v2.0 - 多模板下拉选择器
-- v1.3 - 优化异步处理和日志显示
-- v1.2 - 双平台打包支持
-- v1.1 - GUI界面
 - v1.0 - 基础PDF转Excel
 
 ## 许可证

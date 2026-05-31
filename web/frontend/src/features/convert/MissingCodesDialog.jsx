@@ -2,6 +2,14 @@ import { useState } from 'react'
 import SplitToggle from '../../SplitToggle'
 import { apiClient } from '../../lib/apiClient'
 
+function getWarehouseFromPath() {
+  const match = window.location.pathname.match(/\/wms\/([^/]+)/)
+  if (!match) return null
+  const seg = match[1]
+  if (seg === '' || seg.startsWith('#') || seg.startsWith('?') || seg.startsWith('api') || seg.startsWith('downloads')) return null
+  return seg
+}
+
 export default function MissingCodesDialog({ codes = [], onClose, onRetry }) {
   const [items, setItems] = useState(() =>
     codes.map(c => ({ code: c.code, split: '是', source: c.source }))
@@ -18,8 +26,9 @@ export default function MissingCodesDialog({ codes = [], onClose, onRetry }) {
     setError('')
     setLoading(true)
     try {
+      const wc = getWarehouseFromPath() || 'ZTOWHHY001'
       await apiClient.patch('/split-codes/batch',
-        items.map(i => ({ id: '', code: i.code, split: i.split })),
+        items.map(i => ({ id: '', code: i.code, split: i.split, warehouse_code: wc })),
         { headers: { 'Content-Type': 'application/json' } }
       )
       setLoading(false)

@@ -23,18 +23,60 @@ def get_db() -> sqlite3.Connection:
     return conn
 
 
+_SPLIT_CODES_SCHEMA = """
+    CREATE TABLE split_codes (
+        code TEXT NOT NULL,
+        split TEXT NOT NULL DEFAULT '是',
+        item_name TEXT,
+        warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001',
+        created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+        UNIQUE(code COLLATE NOCASE, warehouse_code)
+    )
+"""
+
+
+def _init_split_codes_table(conn: sqlite3.Connection) -> None:
+    table_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='split_codes'"
+    ).fetchone()
+    old_table_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='_split_codes_old'"
+    ).fetchone()
+
+    if old_table_exists and not table_exists:
+        conn.execute(_SPLIT_CODES_SCHEMA)
+        conn.execute(
+            "INSERT INTO split_codes (code, split, item_name, warehouse_code, created_at) "
+            "SELECT code, split, item_name, 'ZTOWHHY001', created_at FROM _split_codes_old"
+        )
+        conn.execute("DROP TABLE _split_codes_old")
+        return
+
+    if not table_exists:
+        conn.execute(_SPLIT_CODES_SCHEMA)
+        return
+
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(split_codes)").fetchall()]
+    if 'warehouse_code' in cols:
+        return
+
+    conn.execute("ALTER TABLE split_codes RENAME TO _split_codes_old")
+    conn.execute(_SPLIT_CODES_SCHEMA)
+    conn.execute(
+        "INSERT INTO split_codes (code, split, item_name, warehouse_code, created_at) "
+        "SELECT code, split, item_name, 'ZTOWHHY001', created_at FROM _split_codes_old"
+    )
+    conn.execute("DROP TABLE _split_codes_old")
+
+
 def init_db() -> None:
     """初始化数据库表结构"""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS split_codes (
-            code TEXT PRIMARY KEY COLLATE NOCASE,
-            split TEXT NOT NULL DEFAULT '是',
-            item_name TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-        )
-    """)
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    _init_split_codes_table(conn)
+
     conn.execute("""
         CREATE TABLE IF NOT EXISTS hlmc_sequences (
             date TEXT NOT NULL,
@@ -63,21 +105,8 @@ def init_db() -> None:
     """)
 
     seed_version_history(conn)
-
-    # 检查并添加新列
-    cols = [r[1] for r in conn.execute("PRAGMA table_info(split_codes)")]
-    if 'created_at' not in cols:
-        try:
-            conn.execute("ALTER TABLE split_codes ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))")
-        except sqlite3.OperationalError:
-            pass
-    if 'item_name' not in cols:
-        try:
-            conn.execute("ALTER TABLE split_codes ADD COLUMN item_name TEXT")
-        except sqlite3.OperationalError:
-            pass
-
     seed_split_codes(conn)
+    seed_default_split_entries(conn)
     conn.commit()
     conn.close()
 
@@ -113,13 +142,31 @@ def seed_split_codes(conn: sqlite3.Connection) -> None:
         if split not in ("是", "否"):
             split = "是"
         conn.execute(
-            "INSERT OR IGNORE INTO split_codes (code, split) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO split_codes (code, split, warehouse_code) VALUES (?, ?, 'ZTOWHHY001')",
             (code, split),
         )
     wb.close()
 
 
+def seed_default_split_entries(conn: sqlite3.Connection) -> None:
+    """Seed 默认拆零配置（ZTOCSYH002 仓库的默认拆零产品）"""
+    defaults = [
+        ("ZBWP2139", "是"),
+        ("ZBWP0185", "是"),
+    ]
+    for code, split in defaults:
+        conn.execute(
+            "INSERT OR IGNORE INTO split_codes (code, split, warehouse_code) VALUES (?, ?, 'ZTOCSYH002')",
+            (code, split),
+        )
+
+
 VERSION_HISTORY_DATA = [
+    {
+        "version": "v4.4",
+        "date": "2026-05-31 20:00",
+        "changes": "拆零管理按仓库隔离（ZTOWHHY001/ZTOCSYH002独立配置）；新增ZTOWHHY001分组（黔寨寨/黎明屯/欢乐牧场）；/wms/无仓库编码时提示联系管理员；ZTOCSYH002新增ZBWP2139/ZBWP0185默认拆零支持",
+    },
     {
         "version": "v4.3",
         "date": "2026-05-30 22:00",
@@ -295,10 +342,13 @@ def get_hlmc_order(shop_name: str, today_str: str, signature: str, prefix: str) 
         conn.close()
 
 
-def get_split_map() -> Dict[str, str]:
-    """获取拆零配置映射 {code_lower: split}"""
+def get_split_map(warehouse_code: str = "ZTOWHHY001") -> Dict[str, str]:
+    """获取拆零配置映射 {code_lower: split}，按仓库过滤"""
     conn = get_db()
-    cur = conn.execute("SELECT code, split FROM split_codes")
+    cur = conn.execute(
+        "SELECT code, split FROM split_codes WHERE warehouse_code = ?",
+        (warehouse_code,),
+    )
     result = {row["code"].lower(): row["split"] for row in cur}
     conn.close()
     return result

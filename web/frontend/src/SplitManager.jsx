@@ -86,6 +86,14 @@ function tableReducer(state, action) {
   }
 }
 
+function getWarehouseFromPath() {
+  const match = window.location.pathname.match(/\/wms\/([^/]+)/)
+  if (!match) return null
+  const seg = match[1]
+  if (seg === '' || seg.startsWith('#') || seg.startsWith('?') || seg.startsWith('api') || seg.startsWith('downloads')) return null
+  return seg
+}
+
 export default function SplitManager({ onBack }) {
   const [tableState, dispatch] = useReducer(tableReducer, {
     rows: [],
@@ -108,12 +116,16 @@ export default function SplitManager({ onBack }) {
   const baselineByIdRef = useRef(new Map())
   const { toasts, pushToast, dismissToast } = useToast({ duration: 3000, limit: 3 })
 
+  const warehouseCode = getWarehouseFromPath()
+
   const notify = useCallback((message, variant = 'info') => {
     pushToast({ message, variant })
   }, [pushToast])
 
   const fetchCodes = useCallback(() => {
-    fetch(`${API_BASE}/split-codes`)
+    const wc = warehouseCode || ''
+    if (!wc) return
+    fetch(`${API_BASE}/split-codes?warehouse_code=${encodeURIComponent(wc)}`)
       .then(res => res.json())
       .then(data => {
         const nextRows = (data.codes || []).map(row => ({ ...row, id: row.code, isNew: false }))
@@ -124,7 +136,7 @@ export default function SplitManager({ onBack }) {
         dispatch({ type: 'set_all', rows: nextRows })
       })
       .catch(() => notify('获取列表失败', 'danger'))
-  }, [notify])
+  }, [notify, warehouseCode])
 
   useEffect(() => { fetchCodes() }, [fetchCodes])
 
@@ -153,6 +165,7 @@ export default function SplitManager({ onBack }) {
         id: r.isNew ? '' : r.id,
         code: r.code,
         split: r.split,
+        warehouse_code: warehouseCode || 'ZTOWHHY001',
       }))
       const res = await fetch(`${API_BASE}/split-codes/batch`, {
         method: 'PATCH',
@@ -190,7 +203,7 @@ export default function SplitManager({ onBack }) {
 
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/split-codes/${encodeURIComponent(deleteTarget.id)}`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/split-codes/${encodeURIComponent(deleteTarget.id)}?warehouse_code=${encodeURIComponent(warehouseCode || 'ZTOWHHY001')}`, { method: 'DELETE' })
       if (!res.ok) {
         notify('删除失败', 'danger')
         return

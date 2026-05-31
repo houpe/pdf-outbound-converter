@@ -45,9 +45,19 @@ function VersionModal({ versionHistory, currentVersion, onClose }) {
   )
 }
 
-const CURRENT_VERSION = 'v4.3'
+const CURRENT_VERSION = 'v4.4'
 
 const VERSION_HISTORY = [
+  {
+    version: 'v4.4',
+    date: '2026-05-31 20:00',
+    changes: [
+      '新增仓库选择首页：访问 /wms/ 可选择仓库',
+      '拆零管理按仓库隔离：每个仓库独立配置拆零规则',
+      'ZTOCSYH002 新增 ZBWP2139/ZBWP0185 默认拆零支持',
+      '武汉汉阳仓（ZTOWHHY001）、长沙雨花二仓（ZTOCSYH002）',
+    ],
+  },
   {
     version: 'v4.3',
     date: '2026-05-30 22:00',
@@ -228,6 +238,7 @@ export default function ConvertPage({ onOpenSplit }) {
   const [currentVersion, setCurrentVersion] = useState(FALLBACK_VERSION)
   const [versionHistory, setVersionHistory] = useState([])
   const [templateGroups, setTemplateGroups] = useState(null)
+  const [warehouses, setWarehouses] = useState([])
 
   const addLine = useCallback((msg, type = 'info') => {
     setLogLines(prev => [
@@ -255,6 +266,14 @@ export default function ConvertPage({ onOpenSplit }) {
   }, [])
 
   useEffect(() => {
+    apiClient.get('/warehouses')
+      .then(res => {
+        if (Array.isArray(res?.data?.warehouses)) setWarehouses(res.data.warehouses)
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
     apiClient.get('/templates')
       .then(res => {
         const list = res?.data?.templates
@@ -265,10 +284,10 @@ export default function ConvertPage({ onOpenSplit }) {
         const group = getGroupFromPath()
         let filtered = list
         if (group && templateGroups && templateGroups[group]) {
-          const allowed = templateGroups[group]
+          const allowed = templateGroups[group].templates || templateGroups[group]
           filtered = list.filter(t => allowed.includes(t.key))
         } else if (templateGroups && Object.keys(templateGroups).length > 0) {
-          const allGrouped = new Set(Object.values(templateGroups).flat())
+          const allGrouped = new Set(Object.values(templateGroups).flatMap(g => g.templates || g))
           filtered = list.filter(t => !allGrouped.has(t.key))
         }
         const map = {}
@@ -404,6 +423,40 @@ export default function ConvertPage({ onOpenSplit }) {
 
   if (!template) return <div className="app-loading">加载中...</div>
 
+  const group = getGroupFromPath()
+  if (!group) {
+    return (
+      <div className="convert-root">
+        <div className="convert-bg-decoration" aria-hidden="true">
+          <div className="convert-blob convert-blob-1" />
+          <div className="convert-blob convert-blob-2" />
+        </div>
+        <div className="convert-inner">
+          <header className="convert-header">
+            <div className="convert-header-badges">
+              <div className="convert-logo-badge"><IconSparkle /><span>出库单转换</span></div>
+              <button className="convert-version-badge" onClick={() => setVersionShow(true)} type="button">{currentVersion}</button>
+            </div>
+            <h1 className="convert-title">WMS 出库单 <em>转换系统</em></h1>
+            <p className="convert-subtitle">请选择仓库</p>
+          </header>
+          <main className="warehouse-grid">
+            {warehouses.map(wh => (
+              <a key={wh.code} href={`/wms/${wh.code}`} className="warehouse-card">
+                <div className="warehouse-card__name">{wh.name}</div>
+                <div className="warehouse-card__code">{wh.code}</div>
+              </a>
+            ))}
+          </main>
+          <footer className="convert-footer">
+            <span>出库单转换工具</span><span className="footer-dot">·</span><span>Powered by WMS Converter</span>
+          </footer>
+        </div>
+        {versionShow ? <VersionModal versionHistory={versionHistory} currentVersion={currentVersion} onClose={() => setVersionShow(false)} /> : null}
+      </div>
+    )
+  }
+
   return (
     <div className="convert-root">
       <div className="convert-bg-decoration" aria-hidden="true">
@@ -415,6 +468,11 @@ export default function ConvertPage({ onOpenSplit }) {
         <header className="convert-header">
           <div className="convert-header-badges">
             <div className="convert-logo-badge"><IconSparkle /><span>出库单转换</span></div>
+            {(() => {
+              const whInfo = templateGroups && templateGroups[group]
+              const whName = whInfo?.name
+              return whName ? <span className="convert-warehouse-badge">{whName}</span> : null
+            })()}
             <button className="convert-version-badge" onClick={() => setVersionShow(true)} type="button">{currentVersion}</button>
           </div>
           <h1 className="convert-title">PDF/Excel 出库单 <em>转 Excel</em></h1>
@@ -478,7 +536,7 @@ export default function ConvertPage({ onOpenSplit }) {
         <footer className="convert-footer">
           <span>出库单转换工具</span><span className="footer-dot">·</span><span>Powered by WMS Converter</span>
           <span className="footer-dot">·</span>
-          {!getGroupFromPath() && <button className="footer-link" onClick={onOpenSplit} type="button">拆零管理</button>}
+          {getGroupFromPath() && <button className="footer-link" onClick={onOpenSplit} type="button">拆零管理</button>}
         </footer>
       </div>
 

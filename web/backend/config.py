@@ -152,10 +152,17 @@ def get_template_groups() -> dict:
     return config.get("template_groups", {})
 
 
+def get_warehouses() -> dict:
+    """获取仓库配置"""
+    config = _load_config_json()
+    return config.get("warehouses", {})
+
+
 # 导出模板和收件人配置（延迟加载）
 TEMPLATES = get_templates()
 HLMC_RECEIVERS = get_hlmc_receivers()
 TEMPLATE_GROUPS = get_template_groups()
+WAREHOUSES = get_warehouses()
 
 # 日志字段
 LOG_FIELDS = [

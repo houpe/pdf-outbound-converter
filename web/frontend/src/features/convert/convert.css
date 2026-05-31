@@ -875,3 +875,59 @@
   font-size: 13px;
   color: var(--text-muted);
 }
+
+.warehouse-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+  max-width: 640px;
+  margin: 40px auto 0;
+  position: relative;
+  z-index: 1;
+}
+
+.warehouse-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 24px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(12px);
+  border: 1.5px solid var(--border);
+  text-decoration: none;
+  color: var(--text);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.warehouse-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 20px rgba(33,115,70,0.15);
+  transform: translateY(-2px);
+}
+
+.warehouse-card__name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.warehouse-card__code {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.convert-warehouse-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(33, 115, 70, 0.1);
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}

@@ -10,6 +10,7 @@ class SplitCodeCreate(BaseModel):
     """拆零配置创建/更新请求"""
     code: str
     split: str
+    warehouse_code: str = "ZTOWHHY001"
 
 
 class BatchItem(BaseModel):
@@ -17,3 +18,4 @@ class BatchItem(BaseModel):
     id: str
     code: str
     split: str
+    warehouse_code: str = "ZTOWHHY001"

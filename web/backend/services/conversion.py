@@ -182,7 +182,7 @@ def create_excel(
             for cell in row:
                 cell.value = None
 
-    split_map = get_split_map()
+    split_map = get_split_map("ZTOCSYH002" if template_key == "yss" else "ZTOWHHY001")
 
     # 仅黎明屯铁锅炖校验拆零配置
     if template_key == "lmt":
@@ -234,21 +234,25 @@ def create_excel(
         ws.cell(row=i, column=7, value=item["item_name"])
         ws.cell(row=i, column=8, value=item["item_code"])
 
-        # 黔寨寨模板：数量统一放最小单位数量(Col10)
         if template_key == "qzz":
             ws.cell(row=i, column=9, value="")
             ws.cell(row=i, column=10, value=quantity_val)
         elif template_key == "yss":
-            ws.cell(row=i, column=9, value="")
-            ws.cell(row=i, column=10, value=quantity_val)
-        else:
-            # 其他模板：根据商品拆零模板决定放 Col9(二级单位) 还是 Col10(最小单位)
             item_code = str(item["item_code"]).strip()
             split_flag = split_map.get(item_code.lower(), "")
-            if split_flag == "否":  # 不拆零 → 放最小单位数量(Col10)
+            if split_flag == "是":
+                ws.cell(row=i, column=9, value=quantity_val)
+                ws.cell(row=i, column=10, value="")
+            else:
                 ws.cell(row=i, column=9, value="")
                 ws.cell(row=i, column=10, value=quantity_val)
-            else:  # 拆零 → 放二级单位数量(Col9)
+        else:
+            item_code = str(item["item_code"]).strip()
+            split_flag = split_map.get(item_code.lower(), "")
+            if split_flag == "否":
+                ws.cell(row=i, column=9, value="")
+                ws.cell(row=i, column=10, value=quantity_val)
+            else:
                 ws.cell(row=i, column=9, value=quantity_val)
                 ws.cell(row=i, column=10, value="")
 

@@ -21,6 +21,10 @@
       "merchant_code": "Q20260526001"
     }
   },
+  "warehouses": {
+    "ZTOWHHY001": { "name": "武汉汉阳仓" },
+    "ZTOCSYH002": { "name": "长沙雨花二仓" }
+  },
   "hlmc_receivers": {
     "银泰": {
       "name": "王先生",
@@ -46,6 +50,7 @@
     "rate_limit_max": 30
   },
   "template_groups": {
+    "ZTOWHHY001": ["qzz", "lmt", "hlmc"],
     "ZTOCSYH002": ["yss"]
   }
 }
