@@ -20,7 +20,7 @@ from config import (
     TEMPLATES,
 )
 from database import get_split_map
-from parsers import extract_pdf_data, parse_lmt_excel, parse_hlmc_excel, parse_yss_excel
+from strategies import get_strategy
 
 
 async def _do_convert(
@@ -39,6 +39,8 @@ async def _do_convert(
     if not merchant_code:
         merchant_code = template_cfg["merchant_code"]
 
+    strategy = get_strategy(template_key)
+
     all_items: List[Dict[str, str]] = []
     header_info: Dict[str, str] = {}
     parsed_files = 0
@@ -56,12 +58,11 @@ async def _do_convert(
         upload_path = UPLOADS_DIR / safe_name
         file_saved = False
 
-        # 流式写入，避免整个文件加载到内存
         try:
             total = 0
             with open(upload_path, "wb") as f:
                 while True:
-                    chunk = await file.read(1024 * 1024)  # 1MB chunks
+                    chunk = await file.read(1024 * 1024)
                     if not chunk:
                         break
                     total += len(chunk)
@@ -79,14 +80,7 @@ async def _do_convert(
             raise HTTPException(status_code=500, detail=f"文件保存失败: {str(e)}")
 
         try:
-            if template_key == "lmt":
-                file_header, items = parse_lmt_excel(str(upload_path), file.filename)
-            elif template_key == "hlmc":
-                file_header, items = parse_hlmc_excel(str(upload_path))
-            elif template_key == "yss":
-                file_header, items = parse_yss_excel(str(upload_path))
-            else:
-                file_header, items = extract_pdf_data(str(upload_path))
+            file_header, items = strategy.parse(str(upload_path), file.filename)
 
             for item in items:
                 item.setdefault("order_no", file_header.get("order_no", ""))
@@ -182,33 +176,11 @@ def create_excel(
             for cell in row:
                 cell.value = None
 
-    split_map = get_split_map("ZTOCSYH002" if template_key == "yss" else "ZTOWHHY001")
+    strategy = get_strategy(template_key)
+    split_map = get_split_map(strategy.warehouse_code)
 
-    # 仅黎明屯铁锅炖校验拆零配置
-    if template_key == "lmt":
-        missing_items: List[Dict[str, str]] = []
-        for item in items:
-            ic = str(item["item_code"]).strip()
-            if ic and ic.lower() not in split_map:
-                sf = item.get("source_file", "未知文件")
-                name = item.get("item_name", "—")
-                missing_items.append({"code": ic, "name": name, "source": sf})
-        seen: set = set()
-        unique_missing: List[Dict[str, str]] = []
-        for m in missing_items:
-            if m["code"] not in seen:
-                seen.add(m["code"])
-                unique_missing.append(m)
-        if unique_missing:
-            msg_parts = [f"「{m['code']}」（来自 {m['source']}）" for m in unique_missing]
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "商品编码缺失",
-                    "codes": unique_missing,
-                    "message": f"以下 {len(unique_missing)} 个商品编码不在拆零管理表中：\n" + "\n".join(msg_parts)
-                }
-            )
+    if strategy.validate_split_codes:
+        strategy.validate_items(items, split_map)
 
     items = sorted(items, key=lambda x: (x.get("receiver_org", ""), x.get("receiver_name", "")))
 
@@ -225,35 +197,19 @@ def create_excel(
         except (ValueError, TypeError):
             quantity_val = 0
 
+        item_code = str(item["item_code"]).strip()
+
         ws.cell(row=i, column=1, value=item_order_no)
         ws.cell(row=i, column=2, value=merchant_code)
-        ws.cell(row=i, column=3, value="ZTOCSYH002" if template_key == "yss" else "ZTOWHHY001")
+        ws.cell(row=i, column=3, value=strategy.warehouse_code)
         ws.cell(row=i, column=4, value="")
         ws.cell(row=i, column=5, value=f"{item_receiver_name},{item_receiver_phone},{item_receiver_address}")
         ws.cell(row=i, column=6, value=item_receiver_org)
         ws.cell(row=i, column=7, value=item["item_name"])
-        ws.cell(row=i, column=8, value=item["item_code"])
+        ws.cell(row=i, column=8, value=item_code)
 
-        if template_key == "qzz":
-            ws.cell(row=i, column=9, value="")
-            ws.cell(row=i, column=10, value=quantity_val)
-        elif template_key == "yss":
-            item_code = str(item["item_code"]).strip()
-            split_flag = split_map.get(item_code.lower(), "")
-            if split_flag == "是":
-                ws.cell(row=i, column=9, value=quantity_val)
-                ws.cell(row=i, column=10, value="")
-            else:
-                ws.cell(row=i, column=9, value="")
-                ws.cell(row=i, column=10, value=quantity_val)
-        else:
-            item_code = str(item["item_code"]).strip()
-            split_flag = split_map.get(item_code.lower(), "")
-            if split_flag == "否":
-                ws.cell(row=i, column=9, value="")
-                ws.cell(row=i, column=10, value=quantity_val)
-            else:
-                ws.cell(row=i, column=9, value=quantity_val)
-                ws.cell(row=i, column=10, value="")
+        col9, col10 = strategy.route_quantity(quantity_val, item_code, split_map)
+        ws.cell(row=i, column=9, value=col9)
+        ws.cell(row=i, column=10, value=col10)
 
     wb.save(output_path)

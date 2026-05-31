@@ -16,7 +16,7 @@ class TestGetSplitMap:
     def test_empty_returns_empty_dict(self, tmp_path, monkeypatch):
         db = tmp_path / "sm.db"
         conn = database.sqlite3.connect(str(db))
-        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))")
+        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT NOT NULL, split TEXT NOT NULL DEFAULT '是', item_name TEXT, warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001', created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')), UNIQUE(code COLLATE NOCASE, warehouse_code))")
         conn.commit()
         conn.close()
         monkeypatch.setattr(database, "DB_PATH", db)
@@ -25,7 +25,7 @@ class TestGetSplitMap:
     def test_returns_mapping(self, tmp_path, monkeypatch):
         db = tmp_path / "sm2.db"
         conn = database.sqlite3.connect(str(db))
-        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))")
+        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT NOT NULL, split TEXT NOT NULL DEFAULT '是', item_name TEXT, warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001', created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')), UNIQUE(code COLLATE NOCASE, warehouse_code))")
         conn.execute("INSERT INTO split_codes (code, split) VALUES ('ABC123', '是')")
         conn.execute("INSERT INTO split_codes (code, split) VALUES ('DEF456', '否')")
         conn.commit()
@@ -38,7 +38,7 @@ class TestGetSplitMap:
     def test_case_lower_in_map(self, tmp_path, monkeypatch):
         db = tmp_path / "sm3.db"
         conn = database.sqlite3.connect(str(db))
-        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))")
+        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT NOT NULL, split TEXT NOT NULL DEFAULT '是', item_name TEXT, warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001', created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')), UNIQUE(code COLLATE NOCASE, warehouse_code))")
         conn.execute("INSERT INTO split_codes (code, split) VALUES ('UPCASE', '是')")
         conn.commit()
         conn.close()
@@ -124,7 +124,7 @@ class TestSeedSplitCodes:
     def test_missing_template_no_error(self, tmp_path, monkeypatch):
         db = tmp_path / "s1.db"
         conn = database.sqlite3.connect(str(db))
-        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))")
+        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT NOT NULL, split TEXT NOT NULL DEFAULT '是', item_name TEXT, warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001', created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')), UNIQUE(code COLLATE NOCASE, warehouse_code))")
         conn.commit()
 
         monkeypatch.setattr(database, "SPLIT_TEMPLATE", Path("/nonexistent/template.xlsx"))
@@ -141,7 +141,7 @@ class TestSeedSplitCodes:
 
         db = tmp_path / "s2.db"
         conn = database.sqlite3.connect(str(db))
-        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))")
+        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT NOT NULL, split TEXT NOT NULL DEFAULT '是', item_name TEXT, warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001', created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')), UNIQUE(code COLLATE NOCASE, warehouse_code))")
         conn.commit()
 
         database.seed_split_codes(conn)
@@ -155,7 +155,7 @@ class TestSeedSplitCodes:
 
         db = tmp_path / "s3.db"
         conn = database.sqlite3.connect(str(db))
-        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))")
+        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT NOT NULL, split TEXT NOT NULL DEFAULT '是', item_name TEXT, warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001', created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')), UNIQUE(code COLLATE NOCASE, warehouse_code))")
         conn.commit()
 
         database.seed_split_codes(conn)
@@ -169,7 +169,7 @@ class TestSeedSplitCodes:
 
         db = tmp_path / "s4.db"
         conn = database.sqlite3.connect(str(db))
-        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))")
+        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT NOT NULL, split TEXT NOT NULL DEFAULT '是', item_name TEXT, warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001', created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')), UNIQUE(code COLLATE NOCASE, warehouse_code))")
         conn.commit()
 
         database.seed_split_codes(conn)
@@ -183,7 +183,7 @@ class TestSeedSplitCodes:
 
         db = tmp_path / "s5.db"
         conn = database.sqlite3.connect(str(db))
-        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))")
+        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT NOT NULL, split TEXT NOT NULL DEFAULT '是', item_name TEXT, warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001', created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')), UNIQUE(code COLLATE NOCASE, warehouse_code))")
         conn.commit()
 
         database.seed_split_codes(conn)
@@ -197,7 +197,7 @@ class TestSeedSplitCodes:
 
         db = tmp_path / "s6.db"
         conn = database.sqlite3.connect(str(db))
-        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')))")
+        conn.execute("CREATE TABLE IF NOT EXISTS split_codes (code TEXT NOT NULL, split TEXT NOT NULL DEFAULT '是', item_name TEXT, warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001', created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')), UNIQUE(code COLLATE NOCASE, warehouse_code))")
         conn.execute("INSERT INTO split_codes (code, split) VALUES ('EXISTING', '是')")
         conn.commit()
 

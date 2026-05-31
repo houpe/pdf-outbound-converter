@@ -36,7 +36,9 @@ class TestSplitCodeCreate:
     def test_model_dump(self):
         model = SplitCodeCreate(code="X", split="是")
         d = model.model_dump()
-        assert d == {"code": "X", "split": "是"}
+        assert d["code"] == "X"
+        assert d["split"] == "是"
+        assert d["warehouse_code"] == "ZTOWHHY001"
 
     def test_model_validate_from_dict(self):
         model = SplitCodeCreate.model_validate({"code": "Y", "split": "否"})

@@ -17,7 +17,14 @@ def db_conn(tmp_path: Path, monkeypatch):
     db_path = tmp_path / "conv.db"
     conn = database.sqlite3.connect(str(db_path))
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS split_codes (code TEXT PRIMARY KEY COLLATE NOCASE, split TEXT NOT NULL DEFAULT '是', item_name TEXT)
+        CREATE TABLE IF NOT EXISTS split_codes (
+            code TEXT NOT NULL,
+            split TEXT NOT NULL DEFAULT '是',
+            item_name TEXT,
+            warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001',
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            UNIQUE(code COLLATE NOCASE, warehouse_code)
+        )
     """)
     conn.commit()
     conn.close()
@@ -31,9 +38,9 @@ def db_conn(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", db_path)
 
     conn = mock_get_db()
-    conn.execute("INSERT INTO split_codes (code, split) VALUES ('C1', '是')")
-    conn.execute("INSERT INTO split_codes (code, split) VALUES ('B1', '是')")
-    conn.execute("INSERT INTO split_codes (code, split) VALUES ('N', '是')")
+    conn.execute("INSERT INTO split_codes (code, split, warehouse_code) VALUES ('C1', '是', 'ZTOWHHY001')")
+    conn.execute("INSERT INTO split_codes (code, split, warehouse_code) VALUES ('B1', '是', 'ZTOWHHY001')")
+    conn.execute("INSERT INTO split_codes (code, split, warehouse_code) VALUES ('N', '是', 'ZTOWHHY001')")
     conn.commit()
     conn.close()
     return db_path
@@ -77,7 +84,7 @@ class TestCreateExcel:
 
     def test_split_yes_routes_to_col9(self, sample_oms_template, db_conn, tmp_path):
         conn = database.get_db()
-        conn.execute("REPLACE INTO split_codes (code, split) VALUES ('C1', '是')")
+        conn.execute("INSERT OR REPLACE INTO split_codes (code, split, warehouse_code) VALUES ('C1', '是', 'ZTOWHHY001')")
         conn.commit()
         conn.close()
 
@@ -90,7 +97,7 @@ class TestCreateExcel:
 
     def test_split_no_routes_to_col10(self, sample_oms_template, db_conn, tmp_path):
         conn = database.get_db()
-        conn.execute("REPLACE INTO split_codes (code, split) VALUES ('C1', '否')")
+        conn.execute("INSERT OR REPLACE INTO split_codes (code, split, warehouse_code) VALUES ('C1', '否', 'ZTOWHHY001')")
         conn.commit()
         conn.close()
 

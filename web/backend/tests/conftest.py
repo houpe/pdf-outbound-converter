@@ -19,25 +19,21 @@ sys.path.insert(0, str(backend_dir))
 
 @pytest.fixture
 def tmp_db(tmp_path: Path) -> Generator[Path, None, None]:
-    """
-    Creates a temporary SQLite database for testing.
-    Yields the path to the database file.
-    Cleans up after the test.
-    """
     db_path = tmp_path / "test_split_codes.db"
     conn = sqlite3.connect(str(db_path))
     conn.execute("""
         CREATE TABLE IF NOT EXISTS split_codes (
-            code TEXT PRIMARY KEY COLLATE NOCASE,
+            code TEXT NOT NULL,
             split TEXT NOT NULL DEFAULT '是',
             item_name TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            warehouse_code TEXT NOT NULL DEFAULT 'ZTOWHHY001',
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            UNIQUE(code COLLATE NOCASE, warehouse_code)
         )
     """)
     conn.commit()
     conn.close()
     yield db_path
-    # Cleanup
     if db_path.exists():
         db_path.unlink()
 

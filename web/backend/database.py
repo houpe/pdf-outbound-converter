@@ -352,3 +352,103 @@ def get_split_map(warehouse_code: str = "ZTOWHHY001") -> Dict[str, str]:
     result = {row["code"].lower(): row["split"] for row in cur}
     conn.close()
     return result
+
+
+class SplitCodeRepo:
+    @staticmethod
+    def list(warehouse_code: str = "") -> list:
+        conn = get_db()
+        if warehouse_code:
+            cur = conn.execute(
+                "SELECT code, split, item_name, warehouse_code, created_at FROM split_codes WHERE warehouse_code = ? ORDER BY created_at DESC",
+                (warehouse_code,),
+            )
+        else:
+            cur = conn.execute("SELECT code, split, item_name, warehouse_code, created_at FROM split_codes ORDER BY created_at DESC")
+        codes = [
+            {"code": row["code"], "split": row["split"], "item_name": row["item_name"], "warehouse_code": row["warehouse_code"], "created_at": row["created_at"]}
+            for row in cur
+        ]
+        conn.close()
+        return codes
+
+    @staticmethod
+    def create(code: str, split: str, warehouse_code: str) -> dict:
+        import sqlite3 as _sq
+        conn = get_db()
+        try:
+            conn.execute(
+                "INSERT INTO split_codes (code, split, warehouse_code) VALUES (?, ?, ?)",
+                (code, split, warehouse_code),
+            )
+            conn.commit()
+            return {"success": True, "code": code, "split": split}
+        except _sq.IntegrityError:
+            raise ValueError(f"商品编码 {code} 在该仓库已存在")
+        finally:
+            conn.close()
+
+    @staticmethod
+    def delete(code: str, warehouse_code: str) -> bool:
+        conn = get_db()
+        cur = conn.execute(
+            "DELETE FROM split_codes WHERE LOWER(code) = LOWER(?) AND warehouse_code = ?",
+            (code.strip(), warehouse_code),
+        )
+        conn.commit()
+        conn.close()
+        return cur.rowcount > 0
+
+    @staticmethod
+    def update(old_code: str, code: str, split: str, warehouse_code: str) -> bool:
+        conn = get_db()
+        cur = conn.execute(
+            "UPDATE split_codes SET code = ?, split = ? WHERE LOWER(code) = LOWER(?) AND warehouse_code = ?",
+            (code, split, old_code.strip(), warehouse_code),
+        )
+        conn.commit()
+        conn.close()
+        return cur.rowcount > 0
+
+    @staticmethod
+    def batch_upsert(items: list) -> dict:
+        import sqlite3 as _sq
+        conn = get_db()
+        success = []
+        errors = []
+        for item in items:
+            code = item.get("code", "").strip()
+            split = item.get("split", "")
+            wc = item.get("warehouse_code", "ZTOWHHY001")
+            item_id = item.get("id", "")
+            if not code:
+                errors.append({"id": item_id, "error": "编码不能为空"})
+                continue
+            if split not in ("是", "否"):
+                errors.append({"id": item_id, "error": "拆零值必须为「是」或「否」"})
+                continue
+            try:
+                if not item_id:
+                    conn.execute(
+                        "INSERT INTO split_codes (code, split, warehouse_code, created_at) VALUES (?, ?, ?, datetime('now', 'localtime'))",
+                        (code, split, wc),
+                    )
+                    success.append({"id": item_id or code, "code": code, "split": split, "action": "added"})
+                else:
+                    cur = conn.execute(
+                        "UPDATE split_codes SET code = ?, split = ? WHERE LOWER(code) = LOWER(?) AND warehouse_code = ?",
+                        (code, split, item_id, wc),
+                    )
+                    if cur.rowcount == 0:
+                        errors.append({"id": item_id, "error": f"未找到编码 {item_id}"})
+                    else:
+                        success.append({"id": item_id, "code": code, "split": split, "action": "updated"})
+            except _sq.IntegrityError:
+                errors.append({"id": item_id, "error": f"商品编码 {code} 在该仓库已存在"})
+        if errors:
+            conn.rollback()
+            conn.close()
+            raise ValueError(errors)
+        conn.commit()
+        conn.close()
+        return {"success": True, "count": len(success), "items": success}

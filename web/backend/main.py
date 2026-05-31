@@ -7,7 +7,6 @@ WMS PDF/Excel 转换工具 - FastAPI 后端入口
 import logging
 import os
 import re
-import sqlite3
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,7 +21,7 @@ from config import (
     ALLOWED_ORIGINS, BASE_DIR, DOWNLOADS_DIR, DOWNLOAD_TTL_SECONDS,
     HEADER_FIELD_LABELS, TEMPLATES, TEMPLATE_GROUPS, WAREHOUSES, DB_PATH, OMS_TEMPLATE, SPLIT_TEMPLATE,
 )
-from database import get_db, init_db
+from database import get_db, init_db, SplitCodeRepo
 from schemas import SplitCodeCreate, BatchItem
 from services.conversion import _do_convert, create_excel
 from services.logging_svc import _safe_log, LOG_FIELDS
@@ -260,16 +259,7 @@ def get_logs_errors(limit: int = 50):
 
 @app.get("/api/split-codes")
 def list_split_codes(warehouse_code: str = ""):
-    conn = get_db()
-    if warehouse_code:
-        cur = conn.execute(
-            "SELECT code, split, item_name, warehouse_code, created_at FROM split_codes WHERE warehouse_code = ? ORDER BY created_at DESC",
-            (warehouse_code,),
-        )
-    else:
-        cur = conn.execute("SELECT code, split, item_name, warehouse_code, created_at FROM split_codes ORDER BY created_at DESC")
-    codes = [{"code": row["code"], "split": row["split"], "item_name": row["item_name"], "warehouse_code": row["warehouse_code"], "created_at": row["created_at"]} for row in cur]
-    conn.close()
+    codes = SplitCodeRepo.list(warehouse_code)
     return {"codes": codes, "total": len(codes)}
 
 
@@ -279,30 +269,15 @@ def create_split_code(input: SplitCodeCreate):
         raise HTTPException(status_code=400, detail="拆零值必须为「是」或「否」")
     if not input.code.strip():
         raise HTTPException(status_code=400, detail="商品编码不能为空")
-    conn = get_db()
     try:
-        conn.execute(
-            "INSERT INTO split_codes (code, split, warehouse_code) VALUES (?, ?, ?)",
-            (input.code.strip(), input.split, input.warehouse_code)
-        )
-        conn.commit()
-        return {"success": True, "code": input.code.strip(), "split": input.split}
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=409, detail=f"商品编码 {input.code} 在该仓库已存在")
-    finally:
-        conn.close()
+        return SplitCodeRepo.create(input.code.strip(), input.split, input.warehouse_code)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @app.delete("/api/split-codes/{code:path}")
 def delete_split_code(code: str, warehouse_code: str = "ZTOWHHY001"):
-    conn = get_db()
-    cur = conn.execute(
-        "DELETE FROM split_codes WHERE LOWER(code) = LOWER(?) AND warehouse_code = ?",
-        (code.strip(), warehouse_code),
-    )
-    conn.commit()
-    conn.close()
-    if cur.rowcount == 0:
+    if not SplitCodeRepo.delete(code, warehouse_code):
         raise HTTPException(status_code=404, detail=f"商品编码 {code} 未找到")
     return {"success": True, "deleted": code.strip()}
 
@@ -313,60 +288,19 @@ def update_split_code(old_code: str, input: SplitCodeCreate):
         raise HTTPException(status_code=400, detail="拆零值必须为「是」或「否」")
     if not input.code.strip():
         raise HTTPException(status_code=400, detail="商品编码不能为空")
-    conn = get_db()
-    cur = conn.execute(
-        "UPDATE split_codes SET code = ?, split = ? WHERE LOWER(code) = LOWER(?) AND warehouse_code = ?",
-        (input.code.strip(), input.split, old_code.strip(), input.warehouse_code)
-    )
-    conn.commit()
-    conn.close()
-    if cur.rowcount == 0:
+    if not SplitCodeRepo.update(old_code.strip(), input.code.strip(), input.split, input.warehouse_code):
         raise HTTPException(status_code=404, detail=f"商品编码 {old_code} 未找到")
     return {"success": True, "old_code": old_code.strip(), "code": input.code.strip(), "split": input.split}
 
 
 @app.patch("/api/split-codes/batch")
 def batch_upsert_split_codes(items: list[BatchItem] = Body(...)):
-    conn = get_db()
-    success = []
-    errors = []
-    for item in items:
-        code = item.code.strip()
-        wc = item.warehouse_code
-        if not code:
-            errors.append({"id": item.id, "error": "编码不能为空"})
-            continue
-        if item.split not in ("是", "否"):
-            errors.append({"id": item.id, "error": "拆零值必须为「是」或「否」"})
-            continue
-        try:
-            if not item.id:
-                conn.execute(
-                    "INSERT INTO split_codes (code, split, warehouse_code, created_at) VALUES (?, ?, ?, datetime('now', 'localtime'))",
-                    (code, item.split, wc)
-                )
-                success.append({"id": item.id or code, "code": code, "split": item.split, "action": "added"})
-            else:
-                cur = conn.execute(
-                    "UPDATE split_codes SET code = ?, split = ? WHERE LOWER(code) = LOWER(?) AND warehouse_code = ?",
-                    (code, item.split, item.id, wc)
-                )
-                if cur.rowcount == 0:
-                    errors.append({"id": item.id, "error": f"未找到编码 {item.id}"})
-                else:
-                    success.append({"id": item.id, "code": code, "split": item.split, "action": "updated"})
-        except sqlite3.IntegrityError:
-            errors.append({"id": item.id, "error": f"商品编码 {code} 在该仓库已存在"})
-            conn.execute("ROLLBACK")
-            conn.close()
-            raise HTTPException(status_code=409, detail=errors)
-    if errors:
-        conn.execute("ROLLBACK")
-        conn.close()
-        raise HTTPException(status_code=400, detail=errors)
-    conn.commit()
-    conn.close()
-    return {"success": True, "count": len(success), "items": success}
+    try:
+        return SplitCodeRepo.batch_upsert([item.model_dump() for item in items])
+    except ValueError as e:
+        error_detail = e.args[0]
+        is_duplicate = any("已存在" in err.get("error", "") for err in error_detail if isinstance(err, dict))
+        raise HTTPException(status_code=409 if is_duplicate else 400, detail=error_detail)
 
 
 # --- 下载 ---
