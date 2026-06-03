@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple
 
 import openpyxl
 
-from parsers.base import _strip_spaces
+from parsers.base import _strip_spaces, _normalize_receiver_name
 
 
 def parse_yss_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]]]:
@@ -75,7 +75,7 @@ def parse_yss_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str
             "category": _get_val(ws, r, _find_col(headers, "物品分类")),
             "remark": "",
             "receiver_org": _strip_spaces(org),
-            "receiver_name": _strip_spaces(recv_name),
+            "receiver_name": _normalize_receiver_name(_strip_spaces(recv_name)),
             "receiver_phone": _strip_spaces(recv_phone),
             "receiver_address": _strip_spaces(recv_addr),
             "order_no": order_no,
