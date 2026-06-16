@@ -90,6 +90,51 @@ def parse_yss_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str
         "receiver_address": "",
         "order_date": "",
     }
+    
+    # 后处理：检查每个门店是否有收件人和门店一致的订单
+    # 如果有，则统一该门店所有订单的单号为"第一个单号_HC"，并将所有原始单号记录到备注
+    from collections import defaultdict
+    store_records = defaultdict(list)
+    
+    # 按门店分组
+    for record in all_records:
+        store = record.get("receiver_org", "")
+        if store:
+            store_records[store].append(record)
+    
+    # 处理每个门店
+    for store, records in store_records.items():
+        # 检查是否有收件人和门店一致的订单
+        has_match = False
+        first_order_no = None
+        
+        for record in records:
+            receiver_name = record.get("receiver_name", "").strip()
+            
+            # 简化匹配逻辑：收件人包含"尹三顺自助烤肉屋"或收件人为空
+            if not receiver_name or "尹三顺自助烤肉屋" in receiver_name:
+                has_match = True
+                if first_order_no is None:
+                    first_order_no = record.get("order_no", "")
+                break
+        
+        # 如果存在匹配，处理该门店的所有订单
+        if has_match and first_order_no:
+            # 收集该门店的所有原始单号（去重）
+            all_order_nos = []
+            for record in records:
+                ono = record.get("order_no", "")
+                if ono and ono not in all_order_nos:
+                    all_order_nos.append(ono)
+            
+            # 统一单号：第一个单号_HC
+            unified_order_no = f"{first_order_no}_HC"
+            
+            # 更新该门店所有订单
+            for record in records:
+                record["order_no"] = unified_order_no
+                record["remark"] = f"YSS原单号: {','.join(all_order_nos)}"
+    
     return info, all_records
 
 
