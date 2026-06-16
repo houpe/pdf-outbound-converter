@@ -35,6 +35,9 @@ def parse_yss_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str
     col_recv_name = _find_col(headers, "收货人")
     col_recv_phone = _find_col(headers, "收货电话")
     col_recv_addr = _find_col(headers, "收货地址")
+    col_remark_doc = _find_col(headers, "单据备注")
+    col_remark_item = _find_col(headers, "物品备注")
+    col_remark_org = _find_col(headers, "收货机构备注")
 
     if not col_code and not col_name:
         raise ValueError("湖南尹三顺模板格式错误：找不到物品编码或物品名称列")
@@ -66,6 +69,13 @@ def parse_yss_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str
         recv_phone = _get_val(ws, r, col_recv_phone)
         recv_addr = _get_val(ws, r, col_recv_addr)
         order_no = _get_val(ws, r, col_ps) or _get_val(ws, r, col_hz)
+        
+        # 读取并合并原始备注
+        remark_doc = _get_val(ws, r, col_remark_doc)
+        remark_item = _get_val(ws, r, col_remark_item)
+        remark_org = _get_val(ws, r, col_remark_org)
+        original_remark_parts = [r for r in [remark_doc, remark_item, remark_org] if r]
+        original_remark = "; ".join(original_remark_parts) if original_remark_parts else ""
 
         all_records.append({
             "item_code": item_code,
@@ -73,7 +83,8 @@ def parse_yss_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str
             "quantity": str(qty),
             "spec": _get_val(ws, r, col_spec),
             "category": _get_val(ws, r, _find_col(headers, "物品分类")),
-            "remark": "",
+            "remark": original_remark,  # 保留原始备注
+            "original_order_no": order_no,  # 记录原始单号
             "receiver_org": _strip_spaces(org),
             "receiver_name": _normalize_receiver_name(_strip_spaces(recv_name)),
             "receiver_phone": _strip_spaces(recv_phone),
@@ -91,8 +102,8 @@ def parse_yss_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str
         "order_date": "",
     }
     
-    # 后处理：检查每个门店是否有收件人和门店一致的订单
-    # 如果有，则统一该门店所有订单的单号为"第一个单号_HC"，并将所有原始单号记录到备注
+    # 后处理：按门店聚合订单，统一单号
+    # 对于每个门店下的所有订单，统一使用第一个单号+_HC作为新单号，原始单号记录到备注
     from collections import defaultdict
     store_records = defaultdict(list)
     
@@ -104,36 +115,37 @@ def parse_yss_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str
     
     # 处理每个门店
     for store, records in store_records.items():
-        # 检查是否有收件人和门店一致的订单
-        has_match = False
-        first_order_no = None
-        
+        # 收集该门店的所有原始单号（去重）
+        all_order_nos = []
         for record in records:
-            receiver_name = record.get("receiver_name", "").strip()
-            
-            # 简化匹配逻辑：收件人包含"尹三顺自助烤肉屋"或收件人为空
-            if not receiver_name or "尹三顺自助烤肉屋" in receiver_name:
-                has_match = True
-                if first_order_no is None:
-                    first_order_no = record.get("order_no", "")
-                break
+            ono = record.get("order_no", "")
+            if ono and ono not in all_order_nos:
+                all_order_nos.append(ono)
         
-        # 如果存在匹配，处理该门店的所有订单
-        if has_match and first_order_no:
-            # 收集该门店的所有原始单号（去重）
-            all_order_nos = []
-            for record in records:
-                ono = record.get("order_no", "")
-                if ono and ono not in all_order_nos:
-                    all_order_nos.append(ono)
-            
-            # 统一单号：第一个单号_HC
+        # 如果该门店有多个不同的单号，则统一处理
+        if len(all_order_nos) > 1:
+            first_order_no = all_order_nos[0]
             unified_order_no = f"{first_order_no}_HC"
             
             # 更新该门店所有订单
             for record in records:
+                # 保留原有的备注，追加该商品自己的原始单号
+                original_remark = record.get("remark", "")
+                original_order_no = record.get("original_order_no", "")
+                
+                if original_order_no:
+                    if original_remark:
+                        record["remark"] = f"{original_remark}\n原单号:{original_order_no}"
+                    else:
+                        record["remark"] = f"原单号:{original_order_no}"
+                
                 record["order_no"] = unified_order_no
-                record["remark"] = f"YSS原单号: {','.join(all_order_nos)}"
+                # 删除临时字段
+                record.pop("original_order_no", None)
+        else:
+            # 只有单号无需合并，清理临时字段
+            for record in records:
+                record.pop("original_order_no", None)
     
     return info, all_records
 

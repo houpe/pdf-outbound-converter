@@ -205,7 +205,10 @@ def create_excel(
         ws.cell(row=i, column=4, value="")
         ws.cell(row=i, column=5, value=f"{item_receiver_name},{item_receiver_phone},{item_receiver_address}")
         ws.cell(row=i, column=6, value=item_receiver_org)
-        ws.cell(row=i, column=7, value=item["item_name"])
+        item_name = str(item["item_name"]).strip()
+        item_remark = str(item.get("remark", "")).strip()
+        remark_value = item_name if not item_remark else f"{item_name}\n{item_remark}"
+        ws.cell(row=i, column=7, value=remark_value)
         ws.cell(row=i, column=8, value=item_code)
 
         col9, col10 = strategy.route_quantity(quantity_val, item_code, split_map)
