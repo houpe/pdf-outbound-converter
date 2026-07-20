@@ -143,4 +143,5 @@ class TestCreateExcel:
         out_path = str(tmp_path / "ct.xlsx")
         items = [{"order_no": "", "receiver_org": "S1", "receiver_name": "张", "receiver_phone": "138", "receiver_address": "京", "item_name": "N", "item_code": "C1", "quantity": "1"}]
         create_excel({}, items, str(sample_oms_template), out_path, merchant_code="MC", template_key="qzz")
-        assert openpyxl.load_workbook(out_path).active.cell(row=3, column=5).value == "张,138,京"
+        # 收件人名字统一加“收”字后缀：张 → 张收
+        assert openpyxl.load_workbook(out_path).active.cell(row=3, column=5).value == "张收,138,京"

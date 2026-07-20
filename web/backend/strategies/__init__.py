@@ -39,3 +39,4 @@ from strategies.hlmc import HlmcStrategy
 from strategies.yss import YssStrategy
 from strategies.hls import HlsStrategy
 from strategies.bw import BwStrategy
+from strategies.pl import PlStrategy

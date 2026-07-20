@@ -29,6 +29,11 @@
       "name": "霸碗",
       "accept": ".xlsx,.xls",
       "merchant_code": "Q20260514001"
+    },
+    "pl": {
+      "name": "派乐汉堡",
+      "accept": ".xlsx,.xls",
+      "merchant_code": "Q20260719002"
     }
   },
   "warehouses": {
@@ -61,6 +66,6 @@
   },
   "template_groups": {
     "ZTOWHHY001": ["qzz", "lmt", "hlmc"],
-    "ZTOCSYH002": ["yss", "hls", "bw"]
+    "ZTOCSYH002": ["yss", "hls", "bw", "pl"]
   }
 }

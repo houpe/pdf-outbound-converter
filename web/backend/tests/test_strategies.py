@@ -15,7 +15,7 @@ from strategies.yss import YssStrategy
 
 class TestRegistry:
     def test_all_strategies_registered(self):
-        assert set(STRATEGY_REGISTRY.keys()) == {"qzz", "lmt", "hlmc", "yss"}
+        assert set(STRATEGY_REGISTRY.keys()) == {"qzz", "lmt", "hlmc", "yss", "hls", "bw", "pl"}
 
     def test_get_strategy_valid(self):
         assert isinstance(get_strategy("qzz"), QzzStrategy)
