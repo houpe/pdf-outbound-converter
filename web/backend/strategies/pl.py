@@ -1,7 +1,7 @@
 """
 派乐汉堡模板策略。
 - 仓库：长沙雨花二仓 ZTOCSYH002
-- 实发数量固定路由到 I 列（一级/二级单位），不按拆零配置分流
+- 实发数量固定路由到 J 列（最小单位数量），因为库存单位是件/袋/条等最小销售单位
 """
 
 from typing import Any, Dict, Tuple
@@ -20,5 +20,5 @@ class PlStrategy(TemplateStrategy):
         return parse_pl_excel(path)
 
     def route_quantity(self, quantity, item_code: str, split_map: Dict[str, str]) -> Tuple[Any, Any]:
-        # 实发数量统一放 I 列（一级/二级单位），不管拆零配置
-        return (quantity, "")
+        # 库存单位是件/袋/条等最小销售单位 → 实发数量放 J 列（最小单位数量）
+        return ("", quantity)
