@@ -23,6 +23,24 @@ from database import get_split_map
 from strategies import get_strategy
 
 
+def _append_shou(name: str) -> str:
+    """收件人名字统一加“收”字后缀。
+    - 空值/纯空白：返回空字符串（不加）
+    - 已以“收”结尾：不重复加
+    - 其他：末尾拼接“收”
+    例：颜园 → 颜园收；颜园收 → 颜园收；"" → ""
+    """
+    if not name:
+        return ""
+    s = str(name).strip()
+    if not s:
+        return ""
+    if s.endswith("收"):
+        return s
+    return s + "收"
+
+
+
 async def _do_convert(
     files: List[UploadFile],
     template_key: str,
@@ -185,7 +203,7 @@ def create_excel(
     items = sorted(items, key=lambda x: (x.get("receiver_org", ""), x.get("receiver_name", "")))
 
     for i, item in enumerate(items, start=3):
-        item_receiver_name = item.get("receiver_name", header_info.get("receiver_name", ""))
+        item_receiver_name = _append_shou(item.get("receiver_name", header_info.get("receiver_name", "")))
         item_receiver_phone = item.get("receiver_phone", header_info.get("receiver_phone", ""))
         item_receiver_address = item.get("receiver_address", header_info.get("receiver_address", ""))
         item_receiver_org = item.get("receiver_org", header_info.get("receiver_org", ""))

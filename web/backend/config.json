@@ -19,6 +19,16 @@
       "name": "湖南尹三顺",
       "accept": ".xlsx,.xls",
       "merchant_code": "Q20260526001"
+    },
+    "hls": {
+      "name": "湖南联昇",
+      "accept": ".xlsx,.xls",
+      "merchant_code": "Q20260527001"
+    },
+    "bw": {
+      "name": "霸碗",
+      "accept": ".xlsx,.xls",
+      "merchant_code": "Q20260514001"
     }
   },
   "warehouses": {
@@ -51,6 +61,6 @@
   },
   "template_groups": {
     "ZTOWHHY001": ["qzz", "lmt", "hlmc"],
-    "ZTOCSYH002": ["yss"]
+    "ZTOCSYH002": ["yss", "hls", "bw"]
   }
 }

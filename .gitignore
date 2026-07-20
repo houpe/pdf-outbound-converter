@@ -41,6 +41,7 @@ app_icon.iconset/*.png
 web/backend/uploads/
 web/backend/downloads/
 web/backend/conversion_log.jsonl
+web/uploads/
 
 # Python virtual environment
 .venv/
@@ -71,3 +72,20 @@ worktrees/
 hlmc_counters.json
 hlmc_history.json
 conversion_log.jsonl
+
+# 环境变量与密钥（绝对不提交）
+.env
+.env.*
+
+# SQLite 数据库（业务运行时数据，不纳入版本控制）
+*.db
+
+# 临时测试用 Excel 样本（放在 backend 根目录的）
+web/backend/*.xlsx
+
+# 调试截图
+header-alignment-*.png
+header-split-v3.png
+log-header-alignment.png
+verify-ui.png
+wms-recovered.png

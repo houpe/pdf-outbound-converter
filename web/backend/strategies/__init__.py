@@ -37,3 +37,5 @@ from strategies.qzz import QzzStrategy
 from strategies.lmt import LmtStrategy
 from strategies.hlmc import HlmcStrategy
 from strategies.yss import YssStrategy
+from strategies.hls import HlsStrategy
+from strategies.bw import BwStrategy
