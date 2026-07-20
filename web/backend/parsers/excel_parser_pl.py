@@ -70,6 +70,8 @@ def parse_pl_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]
         order_no = _get_val(ws, r, col_order_no)
         # 收货客户编码作为门店/收货机构
         recv_org = _get_val(ws, r, col_cust_code)
+        # 按客户编码自动匹配电话（派乐汉堡电话簿）
+        recv_phone = _lookup_phone(recv_org)
 
         all_records.append({
             "item_code": item_code,
@@ -79,7 +81,7 @@ def parse_pl_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]
             "remark": "",
             "receiver_org": _strip_spaces(recv_org),
             "receiver_name": _normalize_receiver_name(_strip_spaces(recv_name)),
-            "receiver_phone": "",
+            "receiver_phone": _strip_spaces(recv_phone),
             "receiver_address": _strip_spaces(recv_addr),
             "order_no": order_no,
         })
@@ -95,6 +97,17 @@ def parse_pl_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]
     }
 
     return info, all_records
+
+
+def _lookup_phone(customer_code: str) -> str:
+    """按客户编码查电话簿（database.customer_phones 表）"""
+    if not customer_code:
+        return ""
+    try:
+        from database import get_customer_phone
+        return get_customer_phone(customer_code, "pl")
+    except Exception:
+        return ""
 
 
 def _parse_customer(customer: str) -> Tuple[str, str]:

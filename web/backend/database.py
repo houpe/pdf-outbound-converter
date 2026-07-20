@@ -104,9 +104,21 @@ def init_db() -> None:
         )
     """)
 
+    # 客户编码→电话映射表（派乐汉堡等模板用，按客户编码自动匹配收件人电话）
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS customer_phones (
+            customer_code TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            template_key TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (customer_code, template_key)
+        )
+    """)
+
     seed_version_history(conn)
     seed_split_codes(conn)
     seed_default_split_entries(conn)
+    _seed_pl_customer_phones(conn)
     conn.commit()
     conn.close()
 
@@ -352,6 +364,58 @@ def get_split_map(warehouse_code: str = "ZTOWHHY001") -> Dict[str, str]:
     result = {row["code"].lower(): row["split"] for row in cur}
     conn.close()
     return result
+
+
+# 派乐汉堡客户编码→电话映射（从客户名册 Excel 导入，2026-07-20）
+_PL_CUSTOMER_PHONES = {
+    "PHUN07461432": "13874605399", "PHUN07457810": "13874407811", "PHUN07396553": "13637411990",
+    "PHUN07308299": "18823858914", "PHUN07306382": "17771626875", "PHUN07384969": "17347592722",
+    "PXIZ08914568": "18821855511", "PHUN07314894": "15274561294", "PHUN07306868": "13874007266",
+    "PHUN07467464": "13420297524", "PHUN07356665": "18373580888", "PHUN07453998": "18273862295",
+    "PHUN07455998": "18166234208", "PHUN07459804": "13874491612", "PHUN07461429": "17346957687",
+    "PHUN07469828": "13627466687", "PHUN07451419": "18169454768", "PHUN07461430": "18975784897",
+    "PHUN07461437": "18897487189", "PHUN07314677": "13874529398", "PHUN07451425": "15274561294",
+    "PHUN07306787": "13570843380", "PHUN07307637": "13575070887", "PHUN07307104": "18086043035",
+    "PHUN07306617": "19998012142", "PHUN07451417": "18574549950", "PHUN07307217": "17759633559",
+    "PHUN07307991": "15793986575", "PHUN07308452": "15111728810", "PHUN07399313": "18075959975",
+    "PHUN07318168": "17788922731", "PHUN07306963": "13677164276", "PHUN07309682": "18711228489",
+    "PHUN07307153": "15576038603", "PHUN07439872": "13135090035", "PHUN07369357": "16673216167",
+    "PHUN07306805": "13874049756", "PHUN07398237": "17873950288", "PHUN07307941": "17707947987",
+    "PHUN07446307": "13574418526", "PHUN07441416": "18974414296", "PHUN07307757": "15171161670",
+    "PHUN07461431": "18074651320", "PHUN07385075": "17872457720", "PHUN07321404": "15200364595",
+    "PHUN07397869": "15211962779", "PHUN07375676": "18074513626", "PHUN07365740": "19329646922",
+    "PHUN07368820": "15073621378", "PHUN07328293": "18975439595", "PHUN07307449": "18796615145",
+    "PHUN07469607": "18173010481", "PHUN07388990": "18973276461", "PHUN07398193": "15180919066",
+    "PHUN07451420": "13762950370", "PHUN07306506": "15700800255", "PHUN07468967": "13974625159",
+    "PHUN07386601": "18573857369", "PHUN07461435": "18932178756", "PHUN07306991": "13647405500",
+    "PHUN07454649": "18608459750",
+}
+
+
+def _seed_pl_customer_phones(conn: sqlite3.Connection) -> None:
+    """初始化派乐汉堡客户电话映射（仅首次创建，不覆盖已有数据）"""
+    exists = conn.execute(
+        "SELECT COUNT(*) FROM customer_phones WHERE template_key = 'pl'"
+    ).fetchone()[0]
+    if exists > 0:
+        return
+    conn.executemany(
+        "INSERT OR IGNORE INTO customer_phones (customer_code, phone, template_key) VALUES (?, ?, 'pl')",
+        list(_PL_CUSTOMER_PHONES.items()),
+    )
+
+
+def get_customer_phone(customer_code: str, template_key: str = "pl") -> str:
+    """按客户编码查询电话，找不到返回空串"""
+    if not customer_code:
+        return ""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT phone FROM customer_phones WHERE customer_code = ? AND template_key = ?",
+        (customer_code.strip(), template_key),
+    ).fetchone()
+    conn.close()
+    return row["phone"] if row else ""
 
 
 class SplitCodeRepo:
