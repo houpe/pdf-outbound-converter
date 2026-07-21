@@ -68,8 +68,8 @@ def parse_pl_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]
         recv_name, recv_addr = _parse_customer(customer)
 
         order_no = _get_val(ws, r, col_order_no)
-        # 收货客户编码作为门店/收货机构
-        recv_org = _get_val(ws, r, col_cust_code)
+        # 门店名称(F列) = 完整客户原文
+        recv_org = customer
         # 按客户全文匹配电话（派乐汉堡电话簿：key=客户完整字符串）
         recv_phone = _lookup_phone(customer)
 
