@@ -202,8 +202,8 @@ export default function CustomerPhoneManager({ onBack }) {
           <table className="cpm-table">
             <thead>
               <tr>
-                <th className="cpm-th--code">客户编码</th>
-                <th className="cpm-th--phone">联系电话</th>
+                <th className="cpm-th--code">客户</th>
+                <th className="cpm-th--phone">电话</th>
                 <th className="cpm-th--time">创建时间</th>
                 <th className="cpm-th--actions"></th>
               </tr>
@@ -229,7 +229,7 @@ export default function CustomerPhoneManager({ onBack }) {
                           onChange={e => updateCell(r.id, 'customer_code', e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && !loading && saveAll()}
                           disabled={loading}
-                          placeholder="如 PHUN07306963"
+                          placeholder="如 湖南省...（地址+姓名）派乐"
                         />
                       </div>
                     </td>
@@ -283,7 +283,7 @@ export default function CustomerPhoneManager({ onBack }) {
         }
       >
         <p className="cpm-modal__message">
-          确定删除客户编码 <strong>{deleteTarget?.customer_code || deleteTarget?.id}</strong> 的电话记录吗？
+          确定删除客户 <strong>{deleteTarget?.customer_code || deleteTarget?.id}</strong> 的电话记录吗？
         </p>
       </Modal>
 

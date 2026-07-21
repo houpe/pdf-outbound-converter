@@ -158,9 +158,9 @@
   background: #ebf7e0 !important;
 }
 
-.cpm-th--code { width: 30%; }
-.cpm-th--phone { width: 25%; }
-.cpm-th--time { width: 25%; white-space: nowrap; }
+.cpm-th--code { width: 50%; }
+.cpm-th--phone { width: 18%; }
+.cpm-th--time { width: 22%; white-space: nowrap; }
 .cpm-th--actions { width: 60px; text-align: right; }
 
 .cpm-code__wrap {
@@ -184,9 +184,12 @@
   border: 1px solid transparent;
   border-radius: var(--radius-xs, 4px);
   font-size: 13px;
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
   background: transparent;
   color: var(--color-text);
+}
+
+.cpm-phone__input {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
 }
 
 .cpm-code__input:hover,
