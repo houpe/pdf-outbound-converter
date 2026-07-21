@@ -163,64 +163,76 @@ python3 -m pytest tests/ --cov=.            # 覆盖率报告
 
 - 访问地址：`https://www.houpe.top/wms/`（仓库选择首页）
 - 后端路径：`/opt/wms/web/backend/`（端口 8000，systemd 管理 `wms-backend.service`）
-- 前端路径：`/www/wwwroot/address-weight-calc/wms/`
+- 前端路径：`/www/wwwroot/address-weight-calc/wms/`（nginx 直接 serve 静态文件）
 - nginx 配置：`/www/server/panel/vhost/nginx/openclaw.conf`
 
-### 部署方式：Docker Compose（2026-05 从 PM2 迁移）
+### 部署方式：systemd + scp（2026-07 起，替代 Docker）
 
-compose 文件：`/www/docker/docker-compose.yml`
-
-```yaml
-wms-api:
-  image: node:24
-  restart: always
-  working_dir: /app
-  volumes:
-    - /www/wwwroot/wms-api:/app          # 绑定挂载，Python 端
-  ports:
-    - "8000:8000"
-  entrypoint:
-    - /app/venv/bin/python3
-    - -m
-    - uvicorn
-    - main:app
-    - --host
-    - 0.0.0.0
-    - --port
-    - "8000"
-  networks:
-    - app_net
-```
-
-容器名：`docker-wms-api-1`，查看日志：`docker logs docker-wms-api-1`
-
-### 发布脚本
+后端由 systemd 直接管理（不再用 Docker），服务名 `wms-backend.service`：
 
 ```bash
-WMS_SERVER="${WMS_SERVER:-root@www.houpe.top}"
-WMS_API_PATH="${WMS_API_PATH:-/www/wwwroot/wms-api}"
-WMS_FRONT_PATH="${WMS_FRONT_PATH:-/www/wwwroot/address-weight-calc/wms}"
-
-# 1. 构建前端
-cd web/frontend && npm run build
-
-# 2. 部署后端（模块化后的全部文件）
-scp -r ../../web/backend/*.py ../../web/backend/*.json ../../web/backend/*.txt "$WMS_SERVER:$WMS_API_PATH/"
-scp -r ../../web/backend/parsers/ "$WMS_SERVER:$WMS_API_PATH/parsers/"
-scp -r ../../web/backend/services/ "$WMS_SERVER:$WMS_API_PATH/services/"
-scp -r ../../web/backend/middleware/ "$WMS_SERVER:$WMS_API_PATH/middleware/"
-
-# 3. 部署前端
-scp -r ./dist/* "$WMS_SERVER:$WMS_FRONT_PATH/"
-
-# 4. 重启容器（替代旧的 pm2 restart）
-ssh "$WMS_SERVER" "docker restart docker-wms-api-1 && echo ✅ done"
+# 服务状态 / 重启 / 日志
+ssh root@www.houpe.top "systemctl status wms-backend"
+ssh root@www.houpe.top "systemctl restart wms-backend"
+ssh root@www.houpe.top "journalctl -u wms-backend -n 50 --no-pager"
 ```
 
-### 快捷发布（单条命令）
+服务定义在 `/etc/systemd/system/wms-backend.service`，运行命令：
+`/usr/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000`
+
+> 注：服务器上 `docker-wms-api-1` 容器是废弃的旧部署，不要再 `docker restart` 它。后端实际跑在宿主机 systemd 下。
+
+### ⚠️ 前端 build 必读（重要）
+
+**构建前端必须用 `npx vite build`，绝对不能加 `NODE_ENV=development`。**
+
+原因：前端 `apiClient.js` 用 `import.meta.env.PROD` 区分环境：
+- `PROD=true`（正确）→ `API_BASE = '/wms/api'` → 请求 `https://www.houpe.top/wms/api/...` ✓
+- `PROD=false`（错误）→ `API_BASE = '/api'` → 请求 `https://www.houpe.top/api/...` → **404，页面白屏**
+
+`NODE_ENV=development npx vite build` 会让 Vite 把 `PROD` 编译成 `false`，导致所有 API 请求路径少 `/wms` 前缀而 404。
+
+**正确构建命令**：
+```bash
+cd web/frontend
+npx vite build          # ✓ 默认 production 模式，PROD=true
+# 不要：NODE_ENV=development npx vite build   ✗ 会毁掉 API 路径
+```
+
+production build 的产物约 330KB（压缩+tree-shake），development 产物约 590KB（未压缩）。如果发现 bundle 异常大，先检查是不是误用了 development 模式。
+
+### 发布步骤
+
+**仅改了后端**（Python 文件）：
+```bash
+cd web/backend
+scp <改动的文件>.py root@www.houpe.top:/opt/wms/web/backend/
+# 如涉及子目录：
+scp -r parsers/ strategies/ services/ root@www.houpe.top:/opt/wms/web/backend/
+# 重启服务（init_db 会在启动时自动建表/迁移）
+ssh root@www.houpe.top "systemctl restart wms-backend"
+```
+
+**仅改了前端**（JS/CSS/JSX）：
+```bash
+cd web/frontend
+npx vite build
+scp -r dist/* root@www.houpe.top:/www/wwwroot/address-weight-calc/wms/
+# 前端是纯静态文件，无需重启服务
+```
+
+**前后端都改了**：先 build 前端，再依次 scp 前端 dist + 后端文件，最后重启 wms-backend。
+
+### 部署后验证
 
 ```bash
-WMS_SERVER="${WMS_SERVER:-root@www.houpe.top}" && npm run build && scp -r dist/* "$WMS_SERVER:/www/wwwroot/address-weight-calc/wms/" && scp ../../web/backend/*.py ../../web/backend/*.json ../../web/backend/*.txt "$WMS_SERVER:/www/wwwroot/wms-api/" && scp -r ../../web/backend/parsers ../../web/backend/services ../../web/backend/middleware "$WMS_SERVER:/www/wwwroot/wms-api/" && ssh "$WMS_SERVER" 'docker restart docker-wms-api-1 && echo ✅ done'
+# 1. 检查关键 API（都应返回 200）
+curl -s -o /dev/null -w "%{http_code}\n" https://www.houpe.top/wms/api/warehouses
+curl -s -o /dev/null -w "%{http_code}\n" https://www.houpe.top/wms/api/templates
+curl -s -o /dev/null -w "%{http_code}\n" https://www.houpe.top/wms/api/version
+
+# 2. 浏览器硬刷新（Cmd+Shift+R）打开 https://www.houpe.top/wms/
+#    确认仓库列表显示、模板能选择、转换能下载
 ```
 
 ### nginx 配置参考（已在 openclaw.conf 中）
