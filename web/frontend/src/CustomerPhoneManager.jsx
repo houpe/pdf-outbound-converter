@@ -65,6 +65,27 @@ export default function CustomerPhoneManager({ onBack }) {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const newInputRef = useRef(null)
   const baselineByIdRef = useRef(new Map())
+  // 登录态（sessionStorage：关浏览器即退出）
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem('cpm_authed') === '1')
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' })
+  const [loginError, setLoginError] = useState('')
+
+  const handleLogin = (e) => {
+    e.preventDefault()
+    if (loginForm.username === 'yhwd' && loginForm.password === 'yhwd123') {
+      sessionStorage.setItem('cpm_authed', '1')
+      setAuthed(true)
+      setLoginError('')
+    } else {
+      setLoginError('账号或密码错误')
+    }
+  }
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('cpm_authed')
+    setAuthed(false)
+    setLoginForm({ username: '', password: '' })
+  }
   const { toasts, pushToast, dismissToast } = useToast({ duration: 3000, limit: 3 })
   const notify = useCallback((msg, variant = 'info') => pushToast(msg, variant), [pushToast])
 
@@ -171,6 +192,39 @@ export default function CustomerPhoneManager({ onBack }) {
     return (r.customer_code || '').toLowerCase().includes(q) || (r.phone || '').toLowerCase().includes(q)
   })
 
+  if (!authed) {
+    return (
+      <div className="cpm">
+        <div className="cpm-login">
+          <form className="cpm-login__form" onSubmit={handleLogin}>
+            <h1 className="cpm-login__title">门店电话管理</h1>
+            <p className="cpm-login__hint">请输入账号密码登录</p>
+            <input
+              className="cpm-login__input"
+              type="text"
+              placeholder="账号"
+              value={loginForm.username}
+              onChange={e => setLoginForm({ ...loginForm, username: e.target.value })}
+              autoFocus
+              autoComplete="username"
+            />
+            <input
+              className="cpm-login__input"
+              type="password"
+              placeholder="密码"
+              value={loginForm.password}
+              onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
+              autoComplete="current-password"
+            />
+            {loginError && <div className="cpm-login__error">{loginError}</div>}
+            <button className="cpm-login__btn" type="submit">登录</button>
+            <button className="cpm-login__back" type="button" onClick={onBack}>返回</button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="cpm">
       <header className="cpm-header">
@@ -179,6 +233,7 @@ export default function CustomerPhoneManager({ onBack }) {
         </button>
         <h1 className="cpm-header__title">门店电话管理</h1>
         <Badge>{rows.filter(r => !r.isNew).length} 个门店</Badge>
+        <button className="cpm-logout" onClick={handleLogout} type="button">退出登录</button>
       </header>
 
       <div className="cpm-toolbar">
