@@ -21,8 +21,8 @@ from config import (
     ALLOWED_ORIGINS, BASE_DIR, DOWNLOADS_DIR, DOWNLOAD_TTL_SECONDS,
     HEADER_FIELD_LABELS, TEMPLATES, TEMPLATE_GROUPS, WAREHOUSES, DB_PATH, OMS_TEMPLATE, SPLIT_TEMPLATE,
 )
-from database import get_db, init_db, SplitCodeRepo
-from schemas import SplitCodeCreate, BatchItem
+from database import get_db, init_db, SplitCodeRepo, CustomerPhoneRepo
+from schemas import SplitCodeCreate, BatchItem, CustomerPhoneBatchItem
 from services.conversion import _do_convert, create_excel
 from services.logging_svc import _safe_log, LOG_FIELDS
 from middleware.rate_limit import _check_rate_limit, _rate_limit_store, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX
@@ -297,6 +297,32 @@ def update_split_code(old_code: str, input: SplitCodeCreate):
 def batch_upsert_split_codes(items: list[BatchItem] = Body(...)):
     try:
         return SplitCodeRepo.batch_upsert([item.model_dump() for item in items])
+    except ValueError as e:
+        error_detail = e.args[0]
+        is_duplicate = any("已存在" in err.get("error", "") for err in error_detail if isinstance(err, dict))
+        raise HTTPException(status_code=409 if is_duplicate else 400, detail=error_detail)
+
+
+# --- 门店电话管理 CRUD ---
+
+
+@app.get("/api/customer-phones")
+def list_customer_phones(template_key: str = "pl"):
+    rows = CustomerPhoneRepo.list(template_key)
+    return {"items": rows, "total": len(rows)}
+
+
+@app.delete("/api/customer-phones/{customer_code:path}")
+def delete_customer_phone(customer_code: str, template_key: str = "pl"):
+    if not CustomerPhoneRepo.delete(customer_code, template_key):
+        raise HTTPException(status_code=404, detail=f"客户编码 {customer_code} 未找到")
+    return {"success": True, "deleted": customer_code.strip()}
+
+
+@app.patch("/api/customer-phones/batch")
+def batch_upsert_customer_phones(items: list[CustomerPhoneBatchItem] = Body(...)):
+    try:
+        return CustomerPhoneRepo.batch_upsert([item.model_dump() for item in items])
     except ValueError as e:
         error_detail = e.args[0]
         is_duplicate = any("已存在" in err.get("error", "") for err in error_detail if isinstance(err, dict))

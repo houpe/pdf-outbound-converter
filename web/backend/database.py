@@ -516,3 +516,74 @@ class SplitCodeRepo:
         conn.commit()
         conn.close()
         return {"success": True, "count": len(success), "items": success}
+
+
+class CustomerPhoneRepo:
+    """客户编码→电话映射 CRUD（门店电话管理）"""
+    @staticmethod
+    def list(template_key: str = "pl") -> list:
+        conn = get_db()
+        cur = conn.execute(
+            "SELECT customer_code, phone, template_key, created_at FROM customer_phones WHERE template_key = ? ORDER BY created_at DESC",
+            (template_key,),
+        )
+        rows = [
+            {"customer_code": row["customer_code"], "phone": row["phone"], "template_key": row["template_key"], "created_at": row["created_at"]}
+            for row in cur
+        ]
+        conn.close()
+        return rows
+
+    @staticmethod
+    def delete(customer_code: str, template_key: str = "pl") -> bool:
+        conn = get_db()
+        cur = conn.execute(
+            "DELETE FROM customer_phones WHERE LOWER(customer_code) = LOWER(?) AND template_key = ?",
+            (customer_code.strip(), template_key),
+        )
+        conn.commit()
+        conn.close()
+        return cur.rowcount > 0
+
+    @staticmethod
+    def batch_upsert(items: list) -> dict:
+        import sqlite3 as _sq
+        conn = get_db()
+        success = []
+        errors = []
+        for item in items:
+            code = item.get("customer_code", "").strip()
+            phone = item.get("phone", "").strip()
+            tk = item.get("template_key", "pl")
+            item_id = item.get("id", "")
+            if not code:
+                errors.append({"id": item_id, "error": "客户编码不能为空"})
+                continue
+            if not phone:
+                errors.append({"id": item_id, "error": "电话不能为空"})
+                continue
+            try:
+                if not item_id:
+                    conn.execute(
+                        "INSERT INTO customer_phones (customer_code, phone, template_key) VALUES (?, ?, ?)",
+                        (code, phone, tk),
+                    )
+                    success.append({"id": item_id or code, "customer_code": code, "phone": phone, "action": "added"})
+                else:
+                    cur = conn.execute(
+                        "UPDATE customer_phones SET customer_code = ?, phone = ? WHERE LOWER(customer_code) = LOWER(?) AND template_key = ?",
+                        (code, phone, item_id, tk),
+                    )
+                    if cur.rowcount == 0:
+                        errors.append({"id": item_id, "error": f"未找到客户编码 {item_id}"})
+                    else:
+                        success.append({"id": item_id, "customer_code": code, "phone": phone, "action": "updated"})
+            except _sq.IntegrityError:
+                errors.append({"id": item_id, "error": f"客户编码 {code} 已存在"})
+        if errors:
+            conn.rollback()
+            conn.close()
+            raise ValueError(errors)
+        conn.commit()
+        conn.close()
+        return {"success": True, "count": len(success), "items": success}

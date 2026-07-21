@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import ConvertPage from './features/convert/ConvertPage'
 import SplitManager from './SplitManager'
+import CustomerPhoneManager from './CustomerPhoneManager'
 import LogViewer from './LogViewer'
 
 function getRouteFromHash() {
@@ -21,11 +22,16 @@ export default function App() {
     return <SplitManager onBack={() => { window.location.hash = '/convert' }} />
   }
 
+  if (view === 'customers') {
+    return <CustomerPhoneManager onBack={() => { window.location.hash = '/convert' }} />
+  }
+
   if (view === 'log') {
     return <LogViewer onBack={() => { window.location.hash = '/convert' }} />
   }
 
   return <ConvertPage
     onOpenSplit={() => { window.location.hash = '/split' }}
+    onOpenCustomers={() => { window.location.hash = '/customers' }}
   />
 }

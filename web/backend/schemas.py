@@ -19,3 +19,11 @@ class BatchItem(BaseModel):
     code: str
     split: str
     warehouse_code: str = "ZTOWHHY001"
+
+
+class CustomerPhoneBatchItem(BaseModel):
+    """门店电话批量操作项"""
+    id: str
+    customer_code: str
+    phone: str
+    template_key: str = "pl"

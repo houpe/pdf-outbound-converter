@@ -225,7 +225,7 @@ function getGroupFromPath() {
   return seg
 }
 
-export default function ConvertPage({ onOpenSplit }) {
+export default function ConvertPage({ onOpenSplit, onOpenCustomers }) {
   const [templates, setTemplates] = useState(FALLBACK_TEMPLATES)
   const [templateKey, setTemplateKey] = useState('qzz')
   const [files, setFiles] = useState([])
@@ -537,6 +537,7 @@ export default function ConvertPage({ onOpenSplit }) {
           <span>出库单转换工具</span><span className="footer-dot">·</span><span>Powered by WMS Converter</span>
           <span className="footer-dot">·</span>
           {getGroupFromPath() && <button className="footer-link" onClick={onOpenSplit} type="button">拆零管理</button>}
+          {getGroupFromPath() === 'ZTOCSYH002' && onOpenCustomers && <button className="footer-link" onClick={onOpenCustomers} type="button">门店电话</button>}
         </footer>
       </div>
 
