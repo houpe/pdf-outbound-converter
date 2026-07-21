@@ -96,6 +96,33 @@ def parse_pl_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]
         "order_date": "",
     }
 
+    # 按客户（收货人）合并订单：同一客户的多条记录统一单号加 -HC
+    from collections import defaultdict
+    customer_groups = defaultdict(list)
+    for record in all_records:
+        customer_groups[record.get("receiver_org", "")].append(record)
+
+    for customer, records in customer_groups.items():
+        # 收集该客户的所有原始单号（去重，保持顺序）
+        all_order_nos = []
+        for record in records:
+            ono = record.get("order_no", "")
+            if ono and ono not in all_order_nos:
+                all_order_nos.append(ono)
+
+        if len(all_order_nos) > 1:
+            # 多个单号：统一用第一个 + -HC，原始单号记到备注
+            unified_order_no = f"{all_order_nos[0]}-HC"
+            for record in records:
+                original_order_no = record.get("order_no", "")
+                record["remark"] = f"原单号:{original_order_no}" if not record.get("remark") else f"{record['remark']}\n原单号:{original_order_no}"
+                record["order_no"] = unified_order_no
+        elif len(all_order_nos) == 1:
+            # 单个单号：也加 -HC 标识合并订单
+            unified_order_no = f"{all_order_nos[0]}-HC"
+            for record in records:
+                record["order_no"] = unified_order_no
+
     return info, all_records
 
 
