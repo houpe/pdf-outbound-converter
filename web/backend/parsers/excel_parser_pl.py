@@ -65,13 +65,13 @@ def parse_pl_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]
 
         # 解析「客户」列：地址（收件人）派乐
         customer = _get_val(ws, r, col_customer)
-        recv_name, recv_addr = _parse_customer(customer)
+        _, recv_addr = _parse_customer(customer)
 
         order_no = _get_val(ws, r, col_order_no)
         # 门店名称(F列) = 完整客户原文
         recv_org = customer
-        # 按客户全文匹配电话（派乐汉堡电话簿：key=客户完整字符串）
-        recv_phone = _lookup_phone(customer)
+        # 按客户全文匹配电话和收件人姓名（派乐汉堡门店管理表）
+        recv_phone, recv_name = _lookup_customer_info(customer)
 
         all_records.append({
             "item_code": item_code,
@@ -123,15 +123,15 @@ def parse_pl_excel(excel_path: str) -> Tuple[Dict[str, str], List[Dict[str, str]
     return info, all_records
 
 
-def _lookup_phone(customer_code: str) -> str:
-    """按客户编码查电话簿（database.customer_phones 表）"""
-    if not customer_code:
-        return ""
+def _lookup_customer_info(customer: str) -> tuple:
+    """按客户全文查门店管理表，返回 (电话, 收件人姓名)，找不到返回 ('', '')"""
+    if not customer:
+        return ("", "")
     try:
-        from database import get_customer_phone
-        return get_customer_phone(customer_code, "pl")
+        from database import get_customer_info
+        return get_customer_info(customer, "pl")
     except Exception:
-        return ""
+        return ("", "")
 
 
 def _parse_customer(customer: str) -> Tuple[str, str]:

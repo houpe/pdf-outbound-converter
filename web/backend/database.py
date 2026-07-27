@@ -104,16 +104,21 @@ def init_db() -> None:
         )
     """)
 
-    # 客户编码→电话映射表（派乐汉堡等模板用，按客户编码自动匹配收件人电话）
+    # 客户编码→电话+收件人映射表（派乐汉堡等模板用，按客户自动匹配收件人电话和姓名）
     conn.execute("""
         CREATE TABLE IF NOT EXISTS customer_phones (
             customer_code TEXT NOT NULL,
             phone TEXT NOT NULL,
+            receiver_name TEXT NOT NULL DEFAULT '',
             template_key TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
             PRIMARY KEY (customer_code, template_key)
         )
     """)
+    # 旧表无 receiver_name 列时自动补列（兼容已存在的库）
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(customer_phones)").fetchall()]
+    if "receiver_name" not in cols:
+        conn.execute("ALTER TABLE customer_phones ADD COLUMN receiver_name TEXT NOT NULL DEFAULT ''")
 
     seed_version_history(conn)
     seed_split_codes(conn)
@@ -366,105 +371,112 @@ def get_split_map(warehouse_code: str = "ZTOWHHY001") -> Dict[str, str]:
     return result
 
 
-# 派乐汉堡客户编码→电话映射（从客户名册 Excel 导入，2026-07-20）
-_PL_CUSTOMER_PHONES = {
-    "湖南省永州市江华县沱江镇民族路58号（陈玲 徐思思）派乐": "13874605399",
-    "湖南省怀化市靖州苗族侗族自治县梅林路中央大街9A栋114.115号门面（石子娴）派乐": "13874407811",
-    "湖南省益阳市安化县小淹镇中学对面 （石少青  黄玉平）派乐": "13637411990",
-    "湖南省岳阳市岳阳县月田镇（李艳）派乐": "18823858914",
-    "湖南省岳阳市岳阳县筻口镇（彭桂华）派乐": "17771626875",
-    "湖南省娄底市连源市七星街镇洪源三角坪（欧阳燕青）派乐": "17347592722",
-    "湖南省岳阳市华容县东山镇三郎堰居委会（邓枪银）派乐": "18821855511",
-    "湖南省怀化市洪江市芙蓉西路飞龙商业广场108-109门面（周宇）派乐": "15274561294",
-    "湖南省岳阳市平江县伍市镇（潘云中 李党忠）派乐": "13874007266",
-    "湖南省永州市江华瑶族自治县涛圩镇（黄连花）派乐": "13420297524",
-    "湖南省郴州市汝城县A区（朱志松）派乐": "18373580888",
-    "湖南省怀化市麻阳县腾阳长寿商都1-009 1-010门面（杨小军 杨慧）派乐": "18273862295",
-    "湖南省怀化市辰溪县黄溪口镇农贸市场旁（杨小军 蒲彪 张勇）派乐": "18166234208",
-    "湖南省怀化市会同县团河镇（曾益兵）派乐": "13874491612",
-    "湖南省永州市江华县水口新镇（卿海花）派乐": "17346957687",
-    "湖南省永州市零陵区湘口馆路北侧（罗华）派乐": "13627466687",
-    "湖南省怀化会同县林城大道金华宾馆(龙思如 梁丽芳)派乐": "18169454768",
-    "湖南省永州市江华瑶族自治县马市镇政府门口50米(林友军)派乐": "18975784897",
-    "湖南省怀化市鹤城区河西银洲大厦13号门面（杨小军）": "18897487189",
-    "湖南省怀化市会同县林城镇山水龙城B3-103 104（向建）派乐": "13874529398",
-    "湖南省怀化市洪江市托口镇(邱伟隆)派乐": "15274561294",
-    "湖南省岳阳市岳阳县柏祥镇镇西街60号（彭桂华 王诗伟）派乐": "13570843380",
-    "湖南省岳阳市岳阳县步仙镇（许辉）派乐": "13575070887",
-    "湖南省岳阳市岳阳县黄沙街镇（彭桂华 周大霞）派乐": "18086043035",
-    "湖南省岳阳市岳阳县公田镇（彭桂华 姚高钟）派乐": "19998012142",
-    "湖南省怀化市锦溪南路346#第一人民医院正大门旁（杨小军）派乐": "18574549950",
-    "湖南省汩罗市白水镇湘泉路3号（李春方）派乐": "17759633559",
-    "湖南省岳阳市湘阴县南湖洲镇（胡震华）派乐汉堡": "15793986575",
-    "湖南省岳阳市平江县瓮江镇（李丹）派乐": "15111728810",
-    "湖南省邵阳市城步苗族自治县西岩镇河东新城一栋1号门面（阎光宇）派乐": "18075959975",
-    "湖南省长沙市宁乡市花明楼镇安源路428 429号（何芳）派乐": "17788922731",
-    "湖南省岳阳市平江县浯口镇（周云云）派乐": "13677164276",
-    "湖南省岳阳市平江县上塔市镇（何燎原）派乐": "18711228489",
-    "湖南省岳阳市汨罗市长乐镇（黄勇利）派乐": "15576038603",
-    "湖南省湘西土家族苗族自治州龙山县民安街道城东路92号（曾祥鹏）派乐": "13135090035",
-    "湖南省常德市汉寿县西湖管理区西湖镇人民路101室（李佳豪）派乐": "16673216167",
-    "湖南省岳阳市平江县岑川镇（朱波东）派乐": "13874049756",
-    "湖南省邵阳市武冈市邓家铺镇（姚家红）派乐": "17873950288",
-    "湖南省益阳市桃江县武潭镇（左志刚）派乐": "17707947987",
-    "湖南省张家界森林公园乌龙寨停车场（王传明）派乐": "13574418526",
-    "湖南省张家界市慈利县三官寺乡新街（杜志刚）派乐": "18974414296",
-    "湖南省岳阳市华容县注滋口镇（张明军  彭桂华 ）派乐": "15171161670",
-    "湖南省永州市江华县大路铺镇207国道加油站旁（李玉秀）派乐": "18074651320",
-    "湖南省怀化市溆浦县桥江镇（彭朝辉 刘军华）派乐": "17872457720",
-    "湖南省易俗河（王志辉）派乐": "15200364595",
-    "湖南省邵阳市邵阳县长阳铺镇（阳茂）派乐": "15211962779",
-    "湖南省益阳市安化县烟溪镇向东路63号（石少青 唐晓剑）派乐": "18074513626",
-    "湖南省常德市汉寿县龙阳街道辰阳路恒基公园世家19栋112号店铺（郭稳）派乐": "19329646922",
-    "湖南省常德市武陵区西园路1号 一小8号门面（聂长安）派乐": "15073621378",
-    "湖南省湘潭市雨湖区新湘路5号(李刚）派乐": "18975439595",
-    "湖南省岳阳市平江县龙门镇（李君瑶 ）派乐": "18796615145",
-    "湖南省永州市零陵区朝阳街道湖南科技学院松园食堂一楼汉堡铺（龙灿辉）派乐": "18173010481",
-    "湖南省娄底市娄星区大埠桥办事处西阳村蒋家组1-A号（高园）派乐": "18973276461",
-    "湖南省邵阳县塘渡口镇夫夷天街1005号（张小红）派乐": "15180919066",
-    "湖南省怀化鹤城区榆树路274号（杨小军）派乐": "13762950370",
-    "湖南省岳阳市临湘市桃林镇（李新龙  柳龙龙）派乐": "15700800255",
-    "湖南省永州市新田县新田二中综合楼8号门面（胡晓斌）派乐": "13974625159",
-    "湖南省娄底市新化县琅塘镇（欧阳燕青）派乐": "18573857369",
-    "湖南省永州市江华县白芒营镇商贸新城万豪甄选生活超市（许斌 何金兰": "18932178756",
-    "湖南省岳阳市岳阳县荣家湾（赵永刚）派乐": "13647405500",
-    "湖南省怀化市中方县中方镇荆坪社区27栋（梁元 杨小军）派乐": "18608459750",
-}
+# 派乐汉堡客户→（电话, 收件人）映射（从客户名册 Excel 导入，2026-07-21）
+_PL_CUSTOMER_PHONES = [
+    ("湖南省永州市江华县沱江镇民族路58号（陈玲 徐思思）派乐", "13874605399", "陈玲"),
+    ("湖南省怀化市靖州苗族侗族自治县梅林路中央大街9A栋114.115号门面（石子娴）派乐", "13874407811", "石子娴"),
+    ("湖南省益阳市安化县小淹镇中学对面 （石少青  黄玉平）派乐", "13637411990", "石少青"),
+    ("湖南省岳阳市岳阳县月田镇（李艳）派乐", "18823858914", "李艳"),
+    ("湖南省岳阳市岳阳县筻口镇（彭桂华）派乐", "17771626875", "彭桂华"),
+    ("湖南省娄底市连源市七星街镇洪源三角坪（欧阳燕青）派乐", "17347592722", "欧阳燕青"),
+    ("湖南省岳阳市华容县东山镇三郎堰居委会（邓枪银）派乐", "18821855511", "邓枪银"),
+    ("湖南省怀化市洪江市芙蓉西路飞龙商业广场108-109门面（周宇）派乐", "15274561294", "周宇"),
+    ("湖南省岳阳市平江县伍市镇（潘云中 李党忠）派乐", "13874007266", "潘云中"),
+    ("湖南省永州市江华瑶族自治县涛圩镇（黄连花）派乐", "13420297524", "黄连花"),
+    ("湖南省郴州市汝城县A区（朱志松）派乐", "18373580888", "朱志松"),
+    ("湖南省怀化市麻阳县腾阳长寿商都1-009 1-010门面（杨小军 杨慧）派乐", "18273862295", "杨小军"),
+    ("湖南省怀化市辰溪县黄溪口镇农贸市场旁（杨小军 蒲彪 张勇）派乐", "18166234208", "杨小军"),
+    ("湖南省怀化市会同县团河镇（曾益兵）派乐", "13874491612", "曾益兵"),
+    ("湖南省永州市江华县水口新镇（卿海花）派乐", "17346957687", "卿海花"),
+    ("湖南省永州市零陵区湘口馆路北侧（罗华）派乐", "13627466687", "罗华"),
+    ("湖南省怀化会同县林城大道金华宾馆(龙思如 梁丽芳)派乐", "18169454768", "龙思如"),
+    ("湖南省永州市江华瑶族自治县马市镇政府门口50米(林友军)派乐", "18975784897", "林友军"),
+    ("湖南省怀化市鹤城区河西银洲大厦13号门面（杨小军）", "18897487189", "杨小军"),
+    ("湖南省怀化市会同县林城镇山水龙城B3-103 104（向建）派乐", "13874529398", "向建"),
+    ("湖南省怀化市洪江市托口镇(邱伟隆)派乐", "15274561294", "邱伟隆"),
+    ("湖南省岳阳市岳阳县柏祥镇镇西街60号（彭桂华 王诗伟）派乐", "13570843380", "彭桂华"),
+    ("湖南省岳阳市岳阳县步仙镇（许辉）派乐", "13575070887", "许辉"),
+    ("湖南省岳阳市岳阳县黄沙街镇（彭桂华 周大霞）派乐", "18086043035", "彭桂华"),
+    ("湖南省岳阳市岳阳县公田镇（彭桂华 姚高钟）派乐", "19998012142", "彭桂华"),
+    ("湖南省怀化市锦溪南路346#第一人民医院正大门旁（杨小军）派乐", "18574549950", "杨小军"),
+    ("湖南省汩罗市白水镇湘泉路3号（李春方）派乐", "17759633559", "李春方"),
+    ("湖南省岳阳市湘阴县南湖洲镇（胡震华）派乐汉堡", "15793986575", "胡震华"),
+    ("湖南省岳阳市平江县瓮江镇（李丹）派乐", "15111728810", "李丹"),
+    ("湖南省邵阳市城步苗族自治县西岩镇河东新城一栋1号门面（阎光宇）派乐", "18075959975", "阎光宇"),
+    ("湖南省长沙市宁乡市花明楼镇安源路428 429号（何芳）派乐", "17788922731", "何芳"),
+    ("湖南省岳阳市平江县浯口镇（周云云）派乐", "13677164276", "周云云"),
+    ("湖南省岳阳市平江县上塔市镇（何燎原）派乐", "18711228489", "何燎原"),
+    ("湖南省岳阳市汨罗市长乐镇（黄勇利）派乐", "15576038603", "黄勇利"),
+    ("湖南省湘西土家族苗族自治州龙山县民安街道城东路92号（曾祥鹏）派乐", "13135090035", "曾祥鹏"),
+    ("湖南省常德市汉寿县西湖管理区西湖镇人民路101室（李佳豪）派乐", "16673216167", "李佳豪"),
+    ("湖南省岳阳市平江县岑川镇（朱波东）派乐", "13874049756", "朱波东"),
+    ("湖南省邵阳市武冈市邓家铺镇（姚家红）派乐", "17873950288", "姚家红"),
+    ("湖南省益阳市桃江县武潭镇（左志刚）派乐", "17707947987", "左志刚"),
+    ("湖南省张家界森林公园乌龙寨停车场（王传明）派乐", "13574418526", "王传明"),
+    ("湖南省张家界市慈利县三官寺乡新街（杜志刚）派乐", "18974414296", "杜志刚"),
+    ("湖南省岳阳市华容县注滋口镇（张明军  彭桂华 ）派乐", "15171161670", "张明军"),
+    ("湖南省永州市江华县大路铺镇207国道加油站旁（李玉秀）派乐", "18074651320", "李玉秀"),
+    ("湖南省怀化市溆浦县桥江镇（彭朝辉 刘军华）派乐", "17872457720", "彭朝辉"),
+    ("湖南省易俗河（王志辉）派乐", "15200364595", "王志辉"),
+    ("湖南省邵阳市邵阳县长阳铺镇（阳茂）派乐", "15211962779", "阳茂"),
+    ("湖南省益阳市安化县烟溪镇向东路63号（石少青 唐晓剑）派乐", "18074513626", "石少青"),
+    ("湖南省常德市汉寿县龙阳街道辰阳路恒基公园世家19栋112号店铺（郭稳）派乐", "19329646922", "郭稳"),
+    ("湖南省常德市武陵区西园路1号 一小8号门面（聂长安）派乐", "15073621378", "聂长安"),
+    ("湖南省湘潭市雨湖区新湘路5号(李刚）派乐", "18975439595", "李刚"),
+    ("湖南省岳阳市平江县龙门镇（李君瑶 ）派乐", "18796615145", "李君瑶"),
+    ("湖南省永州市零陵区朝阳街道湖南科技学院松园食堂一楼汉堡铺（龙灿辉）派乐", "18173010481", "龙灿辉"),
+    ("湖南省娄底市娄星区大埠桥办事处西阳村蒋家组1-A号（高园）派乐", "18973276461", "高园"),
+    ("湖南省邵阳县塘渡口镇夫夷天街1005号（张小红）派乐", "15180919066", "张小红"),
+    ("湖南省怀化鹤城区榆树路274号（杨小军）派乐", "13762950370", "杨小军"),
+    ("湖南省岳阳市临湘市桃林镇（李新龙  柳龙龙）派乐", "15700800255", "李新龙"),
+    ("湖南省永州市新田县新田二中综合楼8号门面（胡晓斌）派乐", "13974625159", "胡晓斌"),
+    ("湖南省娄底市新化县琅塘镇（欧阳燕青）派乐", "18573857369", "欧阳燕青"),
+    ("湖南省永州市江华县白芒营镇商贸新城万豪甄选生活超市（许斌 何金兰", "18932178756", "许斌"),
+    ("湖南省岳阳市岳阳县荣家湾（赵永刚）派乐", "13647405500", "赵永刚"),
+    ("湖南省怀化市中方县中方镇荆坪社区27栋（梁元 杨小军）派乐", "18608459750", "梁元"),
+]
 
 
 def _seed_pl_customer_phones(conn: sqlite3.Connection) -> None:
-    """初始化派乐汉堡客户电话映射。
-    数据迁移：如果检测到旧数据是 PHUN 编码格式，先清空再重新 seed（改为客户全文匹配）。
+    """初始化派乐汉堡客户电话+收件人映射。
+    数据迁移：如果旧数据没有 receiver_name（或还是 PHUN 编码），清空重建。
     """
     exists = conn.execute(
         "SELECT COUNT(*) FROM customer_phones WHERE template_key = 'pl'"
     ).fetchone()[0]
     if exists > 0:
-        # 检测旧格式（PHUN 编码）：如果有则以新格式重建
+        # 检测旧格式：PHUN 编码 或 receiver_name 全空
         old_fmt = conn.execute(
-            "SELECT COUNT(*) FROM customer_phones WHERE template_key = 'pl' AND customer_code LIKE 'PHUN%'"
+            "SELECT COUNT(*) FROM customer_phones WHERE template_key = 'pl' AND (customer_code LIKE 'PHUN%' OR receiver_name = '')"
         ).fetchone()[0]
         if old_fmt > 0:
             conn.execute("DELETE FROM customer_phones WHERE template_key = 'pl'")
         else:
-            return  # 已是新格式，不覆盖用户后续的手动修改
+            return  # 已是含收件人的新格式，不覆盖用户后续的手动修改
     conn.executemany(
-        "INSERT OR IGNORE INTO customer_phones (customer_code, phone, template_key) VALUES (?, ?, 'pl')",
-        list(_PL_CUSTOMER_PHONES.items()),
+        "INSERT OR IGNORE INTO customer_phones (customer_code, phone, receiver_name, template_key) VALUES (?, ?, ?, 'pl')",
+        _PL_CUSTOMER_PHONES,
     )
 
 
-def get_customer_phone(customer_code: str, template_key: str = "pl") -> str:
-    """按客户（全文地址）查询电话，找不到返回空串"""
+def get_customer_info(customer_code: str, template_key: str = "pl") -> tuple:
+    """按客户（全文地址）查询 (电话, 收件人)，找不到返回 ('', '')"""
     if not customer_code:
-        return ""
+        return ("", "")
     conn = get_db()
     row = conn.execute(
-        "SELECT phone FROM customer_phones WHERE customer_code = ? AND template_key = ?",
+        "SELECT phone, receiver_name FROM customer_phones WHERE customer_code = ? AND template_key = ?",
         (customer_code.strip(), template_key),
     ).fetchone()
     conn.close()
-    return row["phone"] if row else ""
+    if not row:
+        return ("", "")
+    return (row["phone"] or "", row["receiver_name"] or "")
+
+
+def get_customer_phone(customer_code: str, template_key: str = "pl") -> str:
+    """按客户（全文地址）查询电话，找不到返回空串（向后兼容）"""
+    return get_customer_info(customer_code, template_key)[0]
 
 
 class SplitCodeRepo:
@@ -568,16 +580,16 @@ class SplitCodeRepo:
 
 
 class CustomerPhoneRepo:
-    """客户编码→电话映射 CRUD（门店电话管理）"""
+    """客户→电话+收件人映射 CRUD（门店电话管理）"""
     @staticmethod
     def list(template_key: str = "pl") -> list:
         conn = get_db()
         cur = conn.execute(
-            "SELECT customer_code, phone, template_key, created_at FROM customer_phones WHERE template_key = ? ORDER BY created_at DESC",
+            "SELECT customer_code, phone, receiver_name, template_key, created_at FROM customer_phones WHERE template_key = ? ORDER BY created_at DESC",
             (template_key,),
         )
         rows = [
-            {"customer_code": row["customer_code"], "phone": row["phone"], "template_key": row["template_key"], "created_at": row["created_at"]}
+            {"customer_code": row["customer_code"], "phone": row["phone"], "receiver_name": row["receiver_name"], "template_key": row["template_key"], "created_at": row["created_at"]}
             for row in cur
         ]
         conn.close()
@@ -603,10 +615,11 @@ class CustomerPhoneRepo:
         for item in items:
             code = item.get("customer_code", "").strip()
             phone = item.get("phone", "").strip()
+            name = item.get("receiver_name", "").strip()
             tk = item.get("template_key", "pl")
             item_id = item.get("id", "")
             if not code:
-                errors.append({"id": item_id, "error": "客户编码不能为空"})
+                errors.append({"id": item_id, "error": "客户不能为空"})
                 continue
             if not phone:
                 errors.append({"id": item_id, "error": "电话不能为空"})
@@ -614,21 +627,21 @@ class CustomerPhoneRepo:
             try:
                 if not item_id:
                     conn.execute(
-                        "INSERT INTO customer_phones (customer_code, phone, template_key) VALUES (?, ?, ?)",
-                        (code, phone, tk),
+                        "INSERT INTO customer_phones (customer_code, phone, receiver_name, template_key) VALUES (?, ?, ?, ?)",
+                        (code, phone, name, tk),
                     )
-                    success.append({"id": item_id or code, "customer_code": code, "phone": phone, "action": "added"})
+                    success.append({"id": item_id or code, "customer_code": code, "phone": phone, "receiver_name": name, "action": "added"})
                 else:
                     cur = conn.execute(
-                        "UPDATE customer_phones SET customer_code = ?, phone = ? WHERE LOWER(customer_code) = LOWER(?) AND template_key = ?",
-                        (code, phone, item_id, tk),
+                        "UPDATE customer_phones SET customer_code = ?, phone = ?, receiver_name = ? WHERE LOWER(customer_code) = LOWER(?) AND template_key = ?",
+                        (code, phone, name, item_id, tk),
                     )
                     if cur.rowcount == 0:
-                        errors.append({"id": item_id, "error": f"未找到客户编码 {item_id}"})
+                        errors.append({"id": item_id, "error": f"未找到客户 {item_id}"})
                     else:
-                        success.append({"id": item_id, "customer_code": code, "phone": phone, "action": "updated"})
+                        success.append({"id": item_id, "customer_code": code, "phone": phone, "receiver_name": name, "action": "updated"})
             except _sq.IntegrityError:
-                errors.append({"id": item_id, "error": f"客户编码 {code} 已存在"})
+                errors.append({"id": item_id, "error": f"客户 {code} 已存在"})
         if errors:
             conn.rollback()
             conn.close()

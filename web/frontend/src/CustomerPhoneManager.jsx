@@ -32,6 +32,7 @@ function tableReducer(state, action) {
       const isDirty = !baseline
         || (nextRow.customer_code ?? '') !== (baseline?.customer_code ?? '')
         || (nextRow.phone ?? '') !== (baseline?.phone ?? '')
+        || (nextRow.receiver_name ?? '') !== (baseline?.receiver_name ?? '')
       if (isDirty) nextPending.add(action.id)
       else nextPending.delete(action.id)
       return { ...state, rows: nextRows, pending: nextPending }
@@ -95,7 +96,7 @@ export default function CustomerPhoneManager({ onBack }) {
       .then(data => {
         const nextRows = (data.items || []).map(row => ({ ...row, id: row.customer_code, isNew: false }))
         baselineByIdRef.current = new Map(
-          nextRows.map(r => [r.id, { customer_code: r.customer_code ?? '', phone: r.phone ?? '' }]),
+          nextRows.map(r => [r.id, { customer_code: r.customer_code ?? '', phone: r.phone ?? '', receiver_name: r.receiver_name ?? '' }]),
         )
         dispatch({ type: 'set_all', rows: nextRows })
       })
@@ -113,14 +114,14 @@ export default function CustomerPhoneManager({ onBack }) {
 
   const addNewRow = () => {
     const id = `_new_${Date.now()}`
-    dispatch({ type: 'add_row', row: { id, customer_code: '', phone: '', created_at: '', isNew: true } })
+    dispatch({ type: 'add_row', row: { id, customer_code: '', phone: '', receiver_name: '', created_at: '', isNew: true } })
     setTimeout(() => newInputRef.current?.focus(), 50)
   }
 
   const discardAll = () => {
     const savedRows = rows.filter(r => !r.isNew).map(r => {
       const b = baselineByIdRef.current.get(r.id)
-      return b ? { ...r, customer_code: b.customer_code, phone: b.phone, id: b.customer_code } : r
+      return b ? { ...r, customer_code: b.customer_code, phone: b.phone, receiver_name: b.receiver_name, id: b.customer_code } : r
     })
     dispatch({ type: 'discard', rows: savedRows })
   }
@@ -134,6 +135,7 @@ export default function CustomerPhoneManager({ onBack }) {
         id: r.isNew ? '' : r.id,
         customer_code: r.customer_code.trim(),
         phone: r.phone.trim(),
+        receiver_name: (r.receiver_name || '').trim(),
         template_key: TEMPLATE_KEY,
       }))
       const res = await fetch(`${API_BASE}/customer-phones/batch`, {
@@ -189,7 +191,7 @@ export default function CustomerPhoneManager({ onBack }) {
   const filtered = rows.filter(r => {
     if (!search.trim()) return true
     const q = search.trim().toLowerCase()
-    return (r.customer_code || '').toLowerCase().includes(q) || (r.phone || '').toLowerCase().includes(q)
+    return (r.customer_code || '').toLowerCase().includes(q) || (r.phone || '').toLowerCase().includes(q) || (r.receiver_name || '').toLowerCase().includes(q)
   })
 
   if (!authed) {
@@ -259,13 +261,14 @@ export default function CustomerPhoneManager({ onBack }) {
               <tr>
                 <th className="cpm-th--code">客户</th>
                 <th className="cpm-th--phone">电话</th>
+                <th className="cpm-th--name">收件人</th>
                 <th className="cpm-th--time">创建时间</th>
                 <th className="cpm-th--actions"></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={4} className="cpm-empty">暂无门店电话记录</td></tr>
+                <tr><td colSpan={5} className="cpm-empty">暂无门店电话记录</td></tr>
               )}
               {filtered.map(r => {
                 const isDirty = pending.has(r.id)
@@ -296,6 +299,16 @@ export default function CustomerPhoneManager({ onBack }) {
                         onKeyDown={e => e.key === 'Enter' && !loading && saveAll()}
                         disabled={loading}
                         placeholder="如 13800000000"
+                      />
+                    </td>
+                    <td className="cpm-name">
+                      <input
+                        className="cpm-name__input"
+                        value={r.receiver_name ?? ''}
+                        onChange={e => updateCell(r.id, 'receiver_name', e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && !loading && saveAll()}
+                        disabled={loading}
+                        placeholder="如 周云云"
                       />
                     </td>
                     <td className="cpm-time">{r.created_at ? formatDateTime(r.created_at) : '—'}</td>

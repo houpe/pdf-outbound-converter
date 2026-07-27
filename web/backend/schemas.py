@@ -26,4 +26,5 @@ class CustomerPhoneBatchItem(BaseModel):
     id: str
     customer_code: str
     phone: str
+    receiver_name: str = ""
     template_key: str = "pl"

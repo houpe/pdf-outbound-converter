@@ -263,9 +263,10 @@
   background: #ebf7e0 !important;
 }
 
-.cpm-th--code { width: 50%; }
-.cpm-th--phone { width: 18%; }
-.cpm-th--time { width: 22%; white-space: nowrap; }
+.cpm-th--code { width: 42%; }
+.cpm-th--phone { width: 15%; }
+.cpm-th--name { width: 12%; }
+.cpm-th--time { width: 19%; white-space: nowrap; }
 .cpm-th--actions { width: 60px; text-align: right; }
 
 .cpm-code__wrap {
@@ -295,6 +296,27 @@
 
 .cpm-phone__input {
   font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.cpm-name__input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs, 4px);
+  font-size: 13px;
+  background: transparent;
+  color: var(--color-text);
+}
+
+.cpm-name__input:hover {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+.cpm-name__input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--color-surface);
 }
 
 .cpm-code__input:hover,
